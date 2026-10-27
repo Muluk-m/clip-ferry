@@ -144,7 +144,7 @@ func must[T any](v T, err error) T {
 
 type scene struct {
 	step       string
-	zh, en     string
+	title, sub string
 	panel      *image.RGBA // under the tray icon
 	settings   *image.RGBA // in a window
 	terminal   []string    // lines; the last one is typed into the prompt box
@@ -177,10 +177,9 @@ func desktop(c *ui.Context, active bool, body func()) {
 }
 
 func caption(c *ui.Context, s scene, left float32) {
-	ui.Column(c).Absolute().Left(left).Top(170).Width(480).Gap(12).Children(func() {
-		ui.Text(c, s.step).FontSize(13).FontWeight(700).TextColor(ui.Hex("#4a6fe3")).FontFeatures("tnum")
-		ui.Text(c, s.zh).FontSize(32).FontWeight(700).TextColor(ui.Hex("#15171c")).LineHeight(1.25)
-		ui.Text(c, s.en).FontSize(17).TextColor(ui.Hex("#4b5163")).LineHeight(1.4)
+	ui.Column(c).Absolute().Left(left).Top(200).Width(400).Gap(12).Children(func() {
+		ui.Text(c, s.title).FontSize(36).FontWeight(700).TextColor(ui.Hex("#15171c")).LetterSpacing(-0.5)
+		ui.Text(c, s.sub).FontSize(18).TextColor(ui.Hex("#4b5163")).LineHeight(1.4)
 	})
 }
 
@@ -251,8 +250,8 @@ func terminal(c *ui.Context, s scene) {
 func titleCard(c *ui.Context, s scene) {
 	ui.Column(c).Fill().Center().Gap(14).Children(func() {
 		ui.Image(c, logo).Size(140, 140)
-		ui.Text(c, s.zh).FontSize(44).FontWeight(800).TextColor(ui.Hex("#15171c")).MarginY(3)
-		ui.Text(c, s.en).FontSize(19).TextColor(ui.Hex("#4b5163")).TextAlign(ui.Center).LineHeight(1.5)
+		ui.Text(c, s.title).FontSize(44).FontWeight(800).TextColor(ui.Hex("#15171c")).MarginY(3)
+		ui.Text(c, s.sub).FontSize(19).TextColor(ui.Hex("#4b5163")).TextAlign(ui.Center).LineHeight(1.5)
 		if s.step != "" {
 			ui.Text(c, s.step).FontSize(14).Font("Menlo").TextColor(ui.Hex("#4a6fe3")).MarginY(5)
 		}
@@ -333,23 +332,19 @@ func TestPromo(t *testing.T) {
 		return
 	}
 	os.MkdirAll(dir, 0o755)
-	lang = "zh-Hans"
+	lang = "en"
 	f := &frames{t: t, dir: dir}
 	d := newDemo(t)
 	a := d.a
 
-	f.hold(scene{zh: "Ferry 摆渡", en: "把本机截图摆渡给远端的 Claude Code\nFerry screenshots to Claude Code on a remote machine"}, 2600*time.Millisecond, false)
+	f.hold(scene{title: "Ferry", sub: "Screenshots for Claude Code over SSH."}, 2200*time.Millisecond, false)
 
 	d.add(mockDesign, 1280, 800, 26*time.Minute)
 	d.add(mockChart, 1600, 1000, 4*time.Minute)
-	intro := scene{step: "01", zh: "远端的 Claude 看不到\n你本机的截图", en: "Over SSH, Claude Code can't see\nthe screenshot on your Mac."}
-	intro.panel, intro.trayActive = d.panel(false), true
-	f.hold(intro, 2600*time.Millisecond, true)
-
 	d.add(mockError, 1440, 900, 0)
-	cp := scene{step: "02", zh: "截图或复制图片\n自动收进菜单栏", en: "Capture or copy an image —\nit lands in the menu bar."}
+	cp := scene{title: "Copy or capture.", sub: "Images land in the menu bar."}
 	cp.panel, cp.trayActive = d.panel(false), true
-	f.hold(cp, 2600*time.Millisecond, true)
+	f.hold(cp, 2400*time.Millisecond, true)
 
 	it := a.items[0]
 	up, err := prepareUpload(it.Path, claudeMaxEdge)
@@ -357,7 +352,7 @@ func TestPromo(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/home/me/.cache/ferry/" + it.ID + "-1568" + up.ext
-	send := scene{step: "03", zh: "按 ↵ 经 SSH 发送\n只传这一张", en: "Press ↵ to send just this one\nover SSH. No LAN, no sync."}
+	send := scene{title: "Press ↵ to send.", sub: "One image, over SSH."}
 	send.trayActive = true
 	for i, p := range []float64{0, 0.18, 0.42, 0.66, 0.85, 1} {
 		a.sending[it.ID] = p
@@ -369,24 +364,23 @@ func TestPromo(t *testing.T) {
 	a.sent[sentKey(a.host, it.ID)] = path
 	a.setStatus(locales.StatusCopied(), false)
 	send.panel = d.panel(false)
-	f.hold(send, 2200*time.Millisecond, false)
+	f.hold(send, 2000*time.Millisecond, false)
 
-	paste := scene{step: "04", zh: "⌘V 粘贴远端路径\nClaude 直接读图", en: "Paste the remote path with ⌘V.\nClaude reads the image."}
-	paste.terminal = []string{"me@macmini ~/app $ claude", "这个报错怎么修？"}
-	f.hold(paste, 1300*time.Millisecond, true)
-	paste.terminal[1] = "这个报错怎么修？ " + path
-	f.hold(paste, 1500*time.Millisecond, false)
-	paste.reply = []string{"⏺ Read(" + filepath.Base(path) + ")", "  orders 还没加载就调用了 .map，", "  在 List.tsx:42 加个空数组默认值即可。"}
-	f.hold(paste, 2600*time.Millisecond, false)
+	paste := scene{title: "Paste the path.", sub: "Claude Code reads the image."}
+	paste.terminal = []string{"me@macmini ~/app $ claude", "Why does this fail?"}
+	f.hold(paste, 1100*time.Millisecond, true)
+	paste.terminal[1] = "Why does this fail? " + path
+	f.hold(paste, 1300*time.Millisecond, false)
+	paste.reply = []string{"⏺ Read(" + filepath.Base(path) + ")", "  orders is undefined on first render.", "  Default it to [] in List.tsx:42."}
+	f.hold(paste, 2400*time.Millisecond, false)
 
 	a.newHost = "me@10.0.0.8"
 	a.addHost()
 	a.chooseHost("macmini")
-	set := scene{step: "05", zh: "读取 ~/.ssh/config\n也能手动添加主机", en: "Hosts come from ~/.ssh/config,\nor add your own."}
+	set := scene{title: "Your SSH hosts.", sub: "From ~/.ssh/config, or add your own."}
 	set.settings = d.settings(false)
-	f.hold(set, 2800*time.Millisecond, true)
+	f.hold(set, 2400*time.Millisecond, true)
 
-	f.hold(scene{zh: "Ferry", en: "免费开源 · macOS 菜单栏应用\nFree and open source · for macOS", step: "github.com/Muluk-m/clip-ferry"}, 3000*time.Millisecond, true)
+	f.hold(scene{title: "Ferry", sub: "Free and open source for macOS.", step: "github.com/Muluk-m/clip-ferry"}, 2800*time.Millisecond, true)
 	f.done()
 }
-
