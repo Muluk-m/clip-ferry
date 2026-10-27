@@ -241,6 +241,16 @@ func TestView(t *testing.T) {
 		t.Errorf("sent with %q", calls[0])
 	}
 
+	var login []bool
+	a.login = func(on bool) error { login = append(login, on); return nil }
+	if err := tt.Click("开机启动"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !a.atLogin || !slices.Equal(login, []bool{true}) {
+		t.Errorf("open at login %v, calls %v", a.atLogin, login)
+	}
+
 	tt.Advance(5 * time.Minute)
 	if !tt.HasText("5 分钟前") {
 		t.Errorf("texts %q five minutes on", tt.Texts())

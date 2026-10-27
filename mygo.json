@@ -1,6 +1,13 @@
 {
-  "name": "clip-share",
+  "name": "Clip Share",
   "identifier": "com.muluk.clipshare",
   "version": "0.1.0",
-  "out": "build"
+  "out": "build",
+  "macos": {
+    "signingIdentity": "Apple Development: maqiqian0316@gmail.com (2CN29TRWQC)",
+    "infoPlist": {
+      "LSUIElement": true,
+      "LSApplicationCategoryType": "public.app-category.developer-tools"
+    }
+  }
 }

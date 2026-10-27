@@ -25,6 +25,13 @@ import (
 
 const maxShots = 100
 
+// summonKey opens the panel from anywhere. Raycast and Spotlight leave it
+// free, and Finder's Cmd+Alt+V moves files.
+const (
+	summonKey   = "Ctrl+Alt+V"
+	summonLabel = "⌃⌥V"
+)
+
 // item is a shot with its thumbnail, decoded once off the main thread.
 type item struct {
 	shot
@@ -37,10 +44,11 @@ type app struct {
 	dir     string
 	history *history
 	sender  sender
-	update  func(func()) // Window.Update
-	copy    func(string) // mygo.Clipboard.WriteText
-	hide    func()       // hides the panel
-	quit    func()       // mygo.App.Quit
+	update  func(func())     // Window.Update
+	copy    func(string)     // mygo.Clipboard.WriteText
+	hide    func()           // hides the panel
+	quit    func()           // mygo.App.Quit
+	login   func(bool) error // mygo.App.SetOpenAtLogin
 	now     func() time.Time
 
 	items   []item
@@ -51,6 +59,7 @@ type app struct {
 	sent    map[string]string // host+"\x00"+ID → remote path
 	status  string
 	failed  bool
+	atLogin bool
 }
 
 func newApp(dir string, hosts []string) *app {
@@ -62,6 +71,7 @@ func newApp(dir string, hosts []string) *app {
 		copy:    func(string) {},
 		hide:    func() {},
 		quit:    func() {},
+		login:   func(bool) error { return nil },
 		now:     time.Now,
 		hosts:   hosts,
 		host:    loadSettings(dir).Host,
@@ -161,6 +171,13 @@ func (a *app) clearHistory() {
 	a.setStatus("历史已清空", false)
 }
 
+func (a *app) toggleLogin() {
+	if err := a.login(a.atLogin); err != nil {
+		a.atLogin = !a.atLogin
+		a.setStatus("设置开机启动失败："+err.Error(), true)
+	}
+}
+
 func (a *app) chooseHost() {
 	if err := saveSettings(a.dir, settings{Host: a.host}); err != nil {
 		a.setStatus("保存设置失败："+err.Error(), true)
@@ -180,7 +197,7 @@ func (a *app) view(c *ui.Context) {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Text(c, "Clip Share").FontSize(17).Bold()
-				ui.Text(c, "发送图片，远端路径写入剪贴板").FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, summonLabel+" 打开 · 发送后远端路径写入剪贴板").FontSize(11).TextColor(t.TextMuted)
 			})
 			if len(a.hosts) == 0 {
 				ui.Text(c, "~/.ssh/config 里没有主机").FontSize(11).TextColor(t.Danger)
@@ -202,15 +219,17 @@ func (a *app) view(c *ui.Context) {
 				}
 			})
 		ui.Divider(c)
+		status, color := a.status, t.TextMuted
+		if status == "" {
+			status = fmt.Sprintf("%d 张图片，仅保存在本机", len(a.items))
+		}
+		if a.failed {
+			color = t.Danger
+		}
+		ui.Text(c, status).FontSize(11).TextColor(color).MaxLines(2).Ellipsis("…")
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			status, color := a.status, t.TextMuted
-			if status == "" {
-				status = fmt.Sprintf("%d 张图片，仅保存在本机", len(a.items))
-			}
-			if a.failed {
-				color = t.Danger
-			}
-			ui.Text(c, status).Grow(1).FontSize(11).TextColor(color).MaxLines(2).Ellipsis("…")
+			ui.Checkbox(c.Key("login"), &a.atLogin, "开机启动").OnChange(a.toggleLogin)
+			ui.Spacer(c)
 			ui.Button(c, "清空").Disabled(len(a.items) == 0).OnClick(a.clearHistory)
 			ui.Button(c, "退出").OnClick(a.quit)
 		})
@@ -258,27 +277,36 @@ func ago(t, now time.Time) string {
 	}
 }
 
-// showPanel places the panel below the tray icon, kept on its display.
+// showPanel places the panel below the tray icon. A crowded menu bar can
+// push the icon off the screen, behind the notch or past the edge: the
+// panel then shows on the display of the pointer, a third of the way down,
+// as launchers do.
 func showPanel(win *mygo.Window, tray *mygo.Tray) {
 	anchor := tray.Bounds()
-	if anchor.Width == 0 || anchor.Height == 0 {
-		win.Center()
-	} else {
-		area := mygo.Screen.DisplayNearestPoint(mygo.Point{
-			X: anchor.X + anchor.Width/2,
-			Y: anchor.Y + anchor.Height/2,
-		}).WorkArea
-		b := win.Bounds()
-		x := anchor.X + (anchor.Width-b.Width)/2
-		y := anchor.Y + anchor.Height + 6
+	center := mygo.Point{X: anchor.X + anchor.Width/2, Y: anchor.Y + anchor.Height/2}
+	d := mygo.Screen.DisplayNearestPoint(center)
+	b := win.Bounds()
+	area := d.WorkArea
+	var x, y int
+	if anchor.Width > 0 && anchor.Height > 0 && contains(d.Bounds, center) {
+		x = anchor.X + (anchor.Width-b.Width)/2
+		y = anchor.Y + anchor.Height + 6
 		if y+b.Height > area.Y+area.Height {
 			y = anchor.Y - b.Height - 6
 		}
-		x = max(area.X, min(x, area.X+max(0, area.Width-b.Width)))
-		y = max(area.Y, min(y, area.Y+max(0, area.Height-b.Height)))
-		win.SetPosition(x, y)
+	} else {
+		area = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
+		x = area.X + (area.Width-b.Width)/2
+		y = area.Y + (area.Height-b.Height)/3
 	}
+	x = max(area.X, min(x, area.X+max(0, area.Width-b.Width)))
+	y = max(area.Y, min(y, area.Y+max(0, area.Height-b.Height)))
+	win.SetPosition(x, y)
 	win.Show()
+}
+
+func contains(r mygo.Rectangle, p mygo.Point) bool {
+	return p.X >= r.X && p.X < r.X+r.Width && p.Y >= r.Y && p.Y < r.Y+r.Height
 }
 
 // trayIcon draws a clipboard, black on transparent for macOS to tint.
@@ -302,8 +330,12 @@ func trayIcon() []byte {
 }
 
 func main() {
+	if !mygo.App.RequestSingleInstanceLock() {
+		return // the running app shows its panel
+	}
 	mygo.App.SetName("Clip Share")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	mygo.App.OnWindowAllClosed(func() {})
 	var quitting bool
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { quitting = true })
 	mygo.App.WhenReady(func() {
@@ -317,45 +349,55 @@ func main() {
 			ID:             "clip-share",
 			Icon:           trayIcon(),
 			IconIsTemplate: true,
-			ToolTip:        "Clip Share — 点击查看剪贴板图片",
+			ToolTip:        "Clip Share — " + summonLabel + " 打开",
 		})
 		if err != nil {
 			log.Fatal("tray: ", err)
 		}
+		// A panel takes the keyboard without activating the app, so the
+		// terminal keeps its place in front and has the keyboard back once
+		// the panel hides.
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:             "Clip Share",
-			Width:             380,
-			Height:            520,
-			Hidden:            true,
-			Frameless:         true,
-			DisableResize:     true,
-			DisableMinimize:   true,
-			DisableMaximize:   true,
-			DisableFullScreen: true,
-			AlwaysOnTop:       true,
-			SkipTaskbar:       true,
-			Content:           ui.View(a.view),
+			Title:         "Clip Share",
+			Panel:         true,
+			Width:         380,
+			Height:        520,
+			Hidden:        true,
+			Frameless:     true,
+			DisableResize: true,
+			Content:       ui.View(a.view),
 		})
 		a.update = win.Update
 		a.copy = mygo.Clipboard.WriteText
 		a.hide = win.Hide
 		a.quit = mygo.App.Quit
+		a.login = mygo.App.SetOpenAtLogin
+		a.atLogin = mygo.App.OpenAtLogin()
 		win.OnBlur(win.Hide)
 		win.OnClose(func(e *mygo.CloseEvent) {
+			// Escape and Cmd+W hide the panel; quitting closes it.
 			if !quitting {
 				e.PreventDefault()
 				win.Hide()
 			}
 		})
+		show := func() { showPanel(win, tray) }
 		toggle := func() {
 			if win.IsVisible() {
 				win.Hide()
 			} else {
-				showPanel(win, tray)
+				show()
 			}
 		}
+		if err := mygo.GlobalShortcut.Register(summonKey, toggle); err != nil {
+			a.setStatus("快捷键 "+summonLabel+" 已被占用："+err.Error(), true)
+		}
+		// Opening the app again, from Spotlight or Launchpad, shows the
+		// panel: the way in when the menu bar has no room for the icon.
+		mygo.App.OnSecondInstance(func([]string, string) { show() })
+		mygo.App.OnActivate(func(bool) { show() })
 		menu := mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "打开 Clip Share", Click: func(*mygo.MenuItem, *mygo.Window) { showPanel(win, tray) }},
+			{Label: "打开 Clip Share", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		})
@@ -373,8 +415,12 @@ func main() {
 		ctx, stop := context.WithCancel(context.Background())
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 			stop()
+			mygo.GlobalShortcut.UnregisterAll()
 			tray.Destroy()
 		})
+		if !mygo.App.WasOpenedAtLogin() {
+			show() // launched by hand: show where it lives
+		}
 		go func() {
 			a.load()
 			w := &watcher{
