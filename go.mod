@@ -1,4 +1,4 @@
-module clip-share
+module clip-ferry
 
 go 1.27.3
 

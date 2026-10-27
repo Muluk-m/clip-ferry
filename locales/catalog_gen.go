@@ -35,94 +35,164 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
-// AppSubtitle says "{key} to open · Send copies the remote path"
-// in the language the app shows.
-func AppSubtitle(key string) string { return In(i18n.Locale()).AppSubtitle(key) }
-
-// AppSubtitle says "{key} to open · Send copies the remote path"
-// in the language of msgs.
-func (msgs Messages) AppSubtitle(key string) string {
-	return Catalog.Format(msgs.locale, "appSubtitle", map[string]any{"key": key})
-}
-
-// NoHosts says "No hosts in ~/.ssh/config"
+// NoHosts says "No hosts yet"
 // in the language the app shows.
 func NoHosts() string { return In(i18n.Locale()).NoHosts() }
 
-// NoHosts says "No hosts in ~/.ssh/config"
+// NoHosts says "No hosts yet"
 // in the language of msgs.
 func (msgs Messages) NoHosts() string {
 	return Catalog.Format(msgs.locale, "noHosts", nil)
 }
 
-// HostLabel says "Remote host"
+// HostsFromConfig says "From ~/.ssh/config"
+// in the language the app shows.
+func HostsFromConfig() string { return In(i18n.Locale()).HostsFromConfig() }
+
+// HostsFromConfig says "From ~/.ssh/config"
+// in the language of msgs.
+func (msgs Messages) HostsFromConfig() string {
+	return Catalog.Format(msgs.locale, "hostsFromConfig", nil)
+}
+
+// HostsAdded says "Added"
+// in the language the app shows.
+func HostsAdded() string { return In(i18n.Locale()).HostsAdded() }
+
+// HostsAdded says "Added"
+// in the language of msgs.
+func (msgs Messages) HostsAdded() string {
+	return Catalog.Format(msgs.locale, "hostsAdded", nil)
+}
+
+// AddHost says "Add Host…"
+// in the language the app shows.
+func AddHost() string { return In(i18n.Locale()).AddHost() }
+
+// AddHost says "Add Host…"
+// in the language of msgs.
+func (msgs Messages) AddHost() string {
+	return Catalog.Format(msgs.locale, "addHost", nil)
+}
+
+// SectionHosts says "Hosts"
+// in the language the app shows.
+func SectionHosts() string { return In(i18n.Locale()).SectionHosts() }
+
+// SectionHosts says "Hosts"
+// in the language of msgs.
+func (msgs Messages) SectionHosts() string {
+	return Catalog.Format(msgs.locale, "sectionHosts", nil)
+}
+
+// NewHost says "New host"
+// in the language the app shows.
+func NewHost() string { return In(i18n.Locale()).NewHost() }
+
+// NewHost says "New host"
+// in the language of msgs.
+func (msgs Messages) NewHost() string {
+	return Catalog.Format(msgs.locale, "newHost", nil)
+}
+
+// HostPlaceholder says "user@host or ssh://user@host:2222"
+// in the language the app shows.
+func HostPlaceholder() string { return In(i18n.Locale()).HostPlaceholder() }
+
+// HostPlaceholder says "user@host or ssh://user@host:2222"
+// in the language of msgs.
+func (msgs Messages) HostPlaceholder() string {
+	return Catalog.Format(msgs.locale, "hostPlaceholder", nil)
+}
+
+// Add says "Add"
+// in the language the app shows.
+func Add() string { return In(i18n.Locale()).Add() }
+
+// Add says "Add"
+// in the language of msgs.
+func (msgs Messages) Add() string {
+	return Catalog.Format(msgs.locale, "add", nil)
+}
+
+// RemoveHost says "Remove {host}"
+// in the language the app shows.
+func RemoveHost(host string) string { return In(i18n.Locale()).RemoveHost(host) }
+
+// RemoveHost says "Remove {host}"
+// in the language of msgs.
+func (msgs Messages) RemoveHost(host string) string {
+	return Catalog.Format(msgs.locale, "removeHost", map[string]any{"host": host})
+}
+
+// HostsHint says "Signs in with your SSH keys. Hosts in ~/.ssh/config are listed too."
+// in the language the app shows.
+func HostsHint() string { return In(i18n.Locale()).HostsHint() }
+
+// HostsHint says "Signs in with your SSH keys. Hosts in ~/.ssh/config are listed too."
+// in the language of msgs.
+func (msgs Messages) HostsHint() string {
+	return Catalog.Format(msgs.locale, "hostsHint", nil)
+}
+
+// ErrHostInvalid says "Enter user@host or ssh://user@host:port"
+// in the language the app shows.
+func ErrHostInvalid() string { return In(i18n.Locale()).ErrHostInvalid() }
+
+// ErrHostInvalid says "Enter user@host or ssh://user@host:port"
+// in the language of msgs.
+func (msgs Messages) ErrHostInvalid() string {
+	return Catalog.Format(msgs.locale, "errHostInvalid", nil)
+}
+
+// ErrHostExists says "{host} is already in the list"
+// in the language the app shows.
+func ErrHostExists(host string) string { return In(i18n.Locale()).ErrHostExists(host) }
+
+// ErrHostExists says "{host} is already in the list"
+// in the language of msgs.
+func (msgs Messages) ErrHostExists(host string) string {
+	return Catalog.Format(msgs.locale, "errHostExists", map[string]any{"host": host})
+}
+
+// ChooseHost says "Choose a host"
+// in the language the app shows.
+func ChooseHost() string { return In(i18n.Locale()).ChooseHost() }
+
+// ChooseHost says "Choose a host"
+// in the language of msgs.
+func (msgs Messages) ChooseHost() string {
+	return Catalog.Format(msgs.locale, "chooseHost", nil)
+}
+
+// HostLabel says "Host"
 // in the language the app shows.
 func HostLabel() string { return In(i18n.Locale()).HostLabel() }
 
-// HostLabel says "Remote host"
+// HostLabel says "Host"
 // in the language of msgs.
 func (msgs Messages) HostLabel() string {
 	return Catalog.Format(msgs.locale, "hostLabel", nil)
 }
 
-// EmptyTitle says "No images yet"
+// More says "More"
 // in the language the app shows.
-func EmptyTitle() string { return In(i18n.Locale()).EmptyTitle() }
+func More() string { return In(i18n.Locale()).More() }
 
-// EmptyTitle says "No images yet"
+// More says "More"
 // in the language of msgs.
-func (msgs Messages) EmptyTitle() string {
-	return Catalog.Format(msgs.locale, "emptyTitle", nil)
+func (msgs Messages) More() string {
+	return Catalog.Format(msgs.locale, "more", nil)
 }
 
-// EmptyHint says "Take a screenshot or copy an image and it shows up here"
+// EmptyHint says "Copy or capture an image"
 // in the language the app shows.
 func EmptyHint() string { return In(i18n.Locale()).EmptyHint() }
 
-// EmptyHint says "Take a screenshot or copy an image and it shows up here"
+// EmptyHint says "Copy or capture an image"
 // in the language of msgs.
 func (msgs Messages) EmptyHint() string {
 	return Catalog.Format(msgs.locale, "emptyHint", nil)
-}
-
-// ImageCount says "{count, plural, one {# image} other {# images}}, kept on this Mac only"
-// in the language the app shows.
-func ImageCount(count int) string { return In(i18n.Locale()).ImageCount(count) }
-
-// ImageCount says "{count, plural, one {# image} other {# images}}, kept on this Mac only"
-// in the language of msgs.
-func (msgs Messages) ImageCount(count int) string {
-	return Catalog.Format(msgs.locale, "imageCount", map[string]any{"count": count})
-}
-
-// OpenAtLogin says "Open at login"
-// in the language the app shows.
-func OpenAtLogin() string { return In(i18n.Locale()).OpenAtLogin() }
-
-// OpenAtLogin says "Open at login"
-// in the language of msgs.
-func (msgs Messages) OpenAtLogin() string {
-	return Catalog.Format(msgs.locale, "openAtLogin", nil)
-}
-
-// Clear says "Clear"
-// in the language the app shows.
-func Clear() string { return In(i18n.Locale()).Clear() }
-
-// Clear says "Clear"
-// in the language of msgs.
-func (msgs Messages) Clear() string {
-	return Catalog.Format(msgs.locale, "clear", nil)
-}
-
-// Quit says "Quit"
-// in the language the app shows.
-func Quit() string { return In(i18n.Locale()).Quit() }
-
-// Quit says "Quit"
-// in the language of msgs.
-func (msgs Messages) Quit() string {
-	return Catalog.Format(msgs.locale, "quit", nil)
 }
 
 // Send says "Send"
@@ -135,14 +205,14 @@ func (msgs Messages) Send() string {
 	return Catalog.Format(msgs.locale, "send", nil)
 }
 
-// SendingPercent says "{percent}%"
+// Delete says "Delete"
 // in the language the app shows.
-func SendingPercent(percent int) string { return In(i18n.Locale()).SendingPercent(percent) }
+func Delete() string { return In(i18n.Locale()).Delete() }
 
-// SendingPercent says "{percent}%"
+// Delete says "Delete"
 // in the language of msgs.
-func (msgs Messages) SendingPercent(percent int) string {
-	return Catalog.Format(msgs.locale, "sendingPercent", map[string]any{"percent": percent})
+func (msgs Messages) Delete() string {
+	return Catalog.Format(msgs.locale, "delete", nil)
 }
 
 // SendImage says "Send image {id}"
@@ -155,6 +225,16 @@ func (msgs Messages) SendImage(id string) string {
 	return Catalog.Format(msgs.locale, "sendImage", map[string]any{"id": id})
 }
 
+// Percent says "{percent}%"
+// in the language the app shows.
+func Percent(percent int) string { return In(i18n.Locale()).Percent(percent) }
+
+// Percent says "{percent}%"
+// in the language of msgs.
+func (msgs Messages) Percent(percent int) string {
+	return Catalog.Format(msgs.locale, "percent", map[string]any{"percent": percent})
+}
+
 // SentTag says "Sent"
 // in the language the app shows.
 func SentTag() string { return In(i18n.Locale()).SentTag() }
@@ -163,6 +243,16 @@ func SentTag() string { return In(i18n.Locale()).SentTag() }
 // in the language of msgs.
 func (msgs Messages) SentTag() string {
 	return Catalog.Format(msgs.locale, "sentTag", nil)
+}
+
+// Hint says "↵ Send   ⌫ Delete"
+// in the language the app shows.
+func Hint() string { return In(i18n.Locale()).Hint() }
+
+// Hint says "↵ Send   ⌫ Delete"
+// in the language of msgs.
+func (msgs Messages) Hint() string {
+	return Catalog.Format(msgs.locale, "hint", nil)
 }
 
 // JustNow says "Just now"
@@ -185,11 +275,11 @@ func (msgs Messages) MinutesAgo(count int) string {
 	return Catalog.Format(msgs.locale, "minutesAgo", map[string]any{"count": count})
 }
 
-// TodayAt says "Today {t, time, short}"
+// TodayAt says "{t, time, short}"
 // in the language the app shows.
 func TodayAt(t time.Time) string { return In(i18n.Locale()).TodayAt(t) }
 
-// TodayAt says "Today {t, time, short}"
+// TodayAt says "{t, time, short}"
 // in the language of msgs.
 func (msgs Messages) TodayAt(t time.Time) string {
 	return Catalog.Format(msgs.locale, "todayAt", map[string]any{"t": t})
@@ -205,31 +295,51 @@ func (msgs Messages) DateAt(t time.Time) string {
 	return Catalog.Format(msgs.locale, "dateAt", map[string]any{"t": t})
 }
 
-// StatusSendingTo says "Sending to {host}…"
+// StatusSending says "Sending {percent}%"
 // in the language the app shows.
-func StatusSendingTo(host string) string { return In(i18n.Locale()).StatusSendingTo(host) }
+func StatusSending(percent int) string { return In(i18n.Locale()).StatusSending(percent) }
 
-// StatusSendingTo says "Sending to {host}…"
+// StatusSending says "Sending {percent}%"
 // in the language of msgs.
-func (msgs Messages) StatusSendingTo(host string) string {
-	return Catalog.Format(msgs.locale, "statusSendingTo", map[string]any{"host": host})
+func (msgs Messages) StatusSending(percent int) string {
+	return Catalog.Format(msgs.locale, "statusSending", map[string]any{"percent": percent})
 }
 
-// StatusCopied says "Remote path copied: {path}"
+// StatusCopied says "Path copied"
 // in the language the app shows.
-func StatusCopied(path string) string { return In(i18n.Locale()).StatusCopied(path) }
+func StatusCopied() string { return In(i18n.Locale()).StatusCopied() }
 
-// StatusCopied says "Remote path copied: {path}"
+// StatusCopied says "Path copied"
 // in the language of msgs.
-func (msgs Messages) StatusCopied(path string) string {
-	return Catalog.Format(msgs.locale, "statusCopied", map[string]any{"path": path})
+func (msgs Messages) StatusCopied() string {
+	return Catalog.Format(msgs.locale, "statusCopied", nil)
 }
 
-// StatusSendFailed says "Couldn't send: {error}"
+// StatusCantReach says "Can't reach {host}"
+// in the language the app shows.
+func StatusCantReach(host string) string { return In(i18n.Locale()).StatusCantReach(host) }
+
+// StatusCantReach says "Can't reach {host}"
+// in the language of msgs.
+func (msgs Messages) StatusCantReach(host string) string {
+	return Catalog.Format(msgs.locale, "statusCantReach", map[string]any{"host": host})
+}
+
+// StatusLoginRefused says "{host} refused the SSH key"
+// in the language the app shows.
+func StatusLoginRefused(host string) string { return In(i18n.Locale()).StatusLoginRefused(host) }
+
+// StatusLoginRefused says "{host} refused the SSH key"
+// in the language of msgs.
+func (msgs Messages) StatusLoginRefused(host string) string {
+	return Catalog.Format(msgs.locale, "statusLoginRefused", map[string]any{"host": host})
+}
+
+// StatusSendFailed says "Send failed: {error}"
 // in the language the app shows.
 func StatusSendFailed(error string) string { return In(i18n.Locale()).StatusSendFailed(error) }
 
-// StatusSendFailed says "Couldn't send: {error}"
+// StatusSendFailed says "Send failed: {error}"
 // in the language of msgs.
 func (msgs Messages) StatusSendFailed(error string) string {
 	return Catalog.Format(msgs.locale, "statusSendFailed", map[string]any{"error": error})
@@ -255,44 +365,34 @@ func (msgs Messages) StatusLoadFailed(error string) string {
 	return Catalog.Format(msgs.locale, "statusLoadFailed", map[string]any{"error": error})
 }
 
-// StatusClearFailed says "Couldn't clear the history: {error}"
+// StatusDeleteFailed says "Couldn't delete: {error}"
 // in the language the app shows.
-func StatusClearFailed(error string) string { return In(i18n.Locale()).StatusClearFailed(error) }
+func StatusDeleteFailed(error string) string { return In(i18n.Locale()).StatusDeleteFailed(error) }
 
-// StatusClearFailed says "Couldn't clear the history: {error}"
+// StatusDeleteFailed says "Couldn't delete: {error}"
 // in the language of msgs.
-func (msgs Messages) StatusClearFailed(error string) string {
-	return Catalog.Format(msgs.locale, "statusClearFailed", map[string]any{"error": error})
+func (msgs Messages) StatusDeleteFailed(error string) string {
+	return Catalog.Format(msgs.locale, "statusDeleteFailed", map[string]any{"error": error})
 }
 
-// StatusCleared says "History cleared"
+// StatusCleared says "Cleared"
 // in the language the app shows.
 func StatusCleared() string { return In(i18n.Locale()).StatusCleared() }
 
-// StatusCleared says "History cleared"
+// StatusCleared says "Cleared"
 // in the language of msgs.
 func (msgs Messages) StatusCleared() string {
 	return Catalog.Format(msgs.locale, "statusCleared", nil)
 }
 
-// StatusPickHost says "Choose a remote host first (from ~/.ssh/config)"
+// StatusLoginFailed says "Couldn't turn on Open at Login"
 // in the language the app shows.
-func StatusPickHost() string { return In(i18n.Locale()).StatusPickHost() }
+func StatusLoginFailed() string { return In(i18n.Locale()).StatusLoginFailed() }
 
-// StatusPickHost says "Choose a remote host first (from ~/.ssh/config)"
+// StatusLoginFailed says "Couldn't turn on Open at Login"
 // in the language of msgs.
-func (msgs Messages) StatusPickHost() string {
-	return Catalog.Format(msgs.locale, "statusPickHost", nil)
-}
-
-// StatusLoginFailed says "Couldn't change Open at login: {error}"
-// in the language the app shows.
-func StatusLoginFailed(error string) string { return In(i18n.Locale()).StatusLoginFailed(error) }
-
-// StatusLoginFailed says "Couldn't change Open at login: {error}"
-// in the language of msgs.
-func (msgs Messages) StatusLoginFailed(error string) string {
-	return Catalog.Format(msgs.locale, "statusLoginFailed", map[string]any{"error": error})
+func (msgs Messages) StatusLoginFailed() string {
+	return Catalog.Format(msgs.locale, "statusLoginFailed", nil)
 }
 
 // StatusSettingsFailed says "Couldn't save settings: {error}"
@@ -305,54 +405,252 @@ func (msgs Messages) StatusSettingsFailed(error string) string {
 	return Catalog.Format(msgs.locale, "statusSettingsFailed", map[string]any{"error": error})
 }
 
-// StatusShortcutTaken says "{key} is taken by another app: {error}"
+// StatusShortcutTaken says "{key} is in use by another app"
 // in the language the app shows.
-func StatusShortcutTaken(key string, error string) string {
-	return In(i18n.Locale()).StatusShortcutTaken(key, error)
-}
+func StatusShortcutTaken(key string) string { return In(i18n.Locale()).StatusShortcutTaken(key) }
 
-// StatusShortcutTaken says "{key} is taken by another app: {error}"
+// StatusShortcutTaken says "{key} is in use by another app"
 // in the language of msgs.
-func (msgs Messages) StatusShortcutTaken(key string, error string) string {
-	return Catalog.Format(msgs.locale, "statusShortcutTaken", map[string]any{"key": key, "error": error})
+func (msgs Messages) StatusShortcutTaken(key string) string {
+	return Catalog.Format(msgs.locale, "statusShortcutTaken", map[string]any{"key": key})
 }
 
-// ErrNoHost says "no remote host chosen"
+// ErrNoHost says "No host chosen"
 // in the language the app shows.
 func ErrNoHost() string { return In(i18n.Locale()).ErrNoHost() }
 
-// ErrNoHost says "no remote host chosen"
+// ErrNoHost says "No host chosen"
 // in the language of msgs.
 func (msgs Messages) ErrNoHost() string {
 	return Catalog.Format(msgs.locale, "errNoHost", nil)
 }
 
-// ErrBadPath says "the remote answered an unexpected path: {path}"
+// ErrBadPath says "Unexpected reply: {path}"
 // in the language the app shows.
 func ErrBadPath(path string) string { return In(i18n.Locale()).ErrBadPath(path) }
 
-// ErrBadPath says "the remote answered an unexpected path: {path}"
+// ErrBadPath says "Unexpected reply: {path}"
 // in the language of msgs.
 func (msgs Messages) ErrBadPath(path string) string {
 	return Catalog.Format(msgs.locale, "errBadPath", map[string]any{"path": path})
 }
 
-// TrayTooltip says "Clip Share — {key} to open"
+// TrayTooltip says "Ferry  {key}"
 // in the language the app shows.
 func TrayTooltip(key string) string { return In(i18n.Locale()).TrayTooltip(key) }
 
-// TrayTooltip says "Clip Share — {key} to open"
+// TrayTooltip says "Ferry  {key}"
 // in the language of msgs.
 func (msgs Messages) TrayTooltip(key string) string {
 	return Catalog.Format(msgs.locale, "trayTooltip", map[string]any{"key": key})
 }
 
-// MenuOpen says "Open Clip Share"
+// MenuOpen says "Open Ferry"
 // in the language the app shows.
 func MenuOpen() string { return In(i18n.Locale()).MenuOpen() }
 
-// MenuOpen says "Open Clip Share"
+// MenuOpen says "Open Ferry"
 // in the language of msgs.
 func (msgs Messages) MenuOpen() string {
 	return Catalog.Format(msgs.locale, "menuOpen", nil)
+}
+
+// MenuSettings says "Settings…"
+// in the language the app shows.
+func MenuSettings() string { return In(i18n.Locale()).MenuSettings() }
+
+// MenuSettings says "Settings…"
+// in the language of msgs.
+func (msgs Messages) MenuSettings() string {
+	return Catalog.Format(msgs.locale, "menuSettings", nil)
+}
+
+// OpenAtLogin says "Open at Login"
+// in the language the app shows.
+func OpenAtLogin() string { return In(i18n.Locale()).OpenAtLogin() }
+
+// OpenAtLogin says "Open at Login"
+// in the language of msgs.
+func (msgs Messages) OpenAtLogin() string {
+	return Catalog.Format(msgs.locale, "openAtLogin", nil)
+}
+
+// Language says "Language"
+// in the language the app shows.
+func Language() string { return In(i18n.Locale()).Language() }
+
+// Language says "Language"
+// in the language of msgs.
+func (msgs Messages) Language() string {
+	return Catalog.Format(msgs.locale, "language", nil)
+}
+
+// FollowSystem says "System"
+// in the language the app shows.
+func FollowSystem() string { return In(i18n.Locale()).FollowSystem() }
+
+// FollowSystem says "System"
+// in the language of msgs.
+func (msgs Messages) FollowSystem() string {
+	return Catalog.Format(msgs.locale, "followSystem", nil)
+}
+
+// ClearHistory says "Clear History"
+// in the language the app shows.
+func ClearHistory() string { return In(i18n.Locale()).ClearHistory() }
+
+// ClearHistory says "Clear History"
+// in the language of msgs.
+func (msgs Messages) ClearHistory() string {
+	return Catalog.Format(msgs.locale, "clearHistory", nil)
+}
+
+// Quit says "Quit Ferry"
+// in the language the app shows.
+func Quit() string { return In(i18n.Locale()).Quit() }
+
+// Quit says "Quit Ferry"
+// in the language of msgs.
+func (msgs Messages) Quit() string {
+	return Catalog.Format(msgs.locale, "quit", nil)
+}
+
+// SettingsTitle says "Ferry Settings"
+// in the language the app shows.
+func SettingsTitle() string { return In(i18n.Locale()).SettingsTitle() }
+
+// SettingsTitle says "Ferry Settings"
+// in the language of msgs.
+func (msgs Messages) SettingsTitle() string {
+	return Catalog.Format(msgs.locale, "settingsTitle", nil)
+}
+
+// SectionSending says "Sending"
+// in the language the app shows.
+func SectionSending() string { return In(i18n.Locale()).SectionSending() }
+
+// SectionSending says "Sending"
+// in the language of msgs.
+func (msgs Messages) SectionSending() string {
+	return Catalog.Format(msgs.locale, "sectionSending", nil)
+}
+
+// SectionGeneral says "General"
+// in the language the app shows.
+func SectionGeneral() string { return In(i18n.Locale()).SectionGeneral() }
+
+// SectionGeneral says "General"
+// in the language of msgs.
+func (msgs Messages) SectionGeneral() string {
+	return Catalog.Format(msgs.locale, "sectionGeneral", nil)
+}
+
+// RemoteFolder says "Remote folder"
+// in the language the app shows.
+func RemoteFolder() string { return In(i18n.Locale()).RemoteFolder() }
+
+// RemoteFolder says "Remote folder"
+// in the language of msgs.
+func (msgs Messages) RemoteFolder() string {
+	return Catalog.Format(msgs.locale, "remoteFolder", nil)
+}
+
+// RemoteFolderHint says "Created on the host on first send."
+// in the language the app shows.
+func RemoteFolderHint() string { return In(i18n.Locale()).RemoteFolderHint() }
+
+// RemoteFolderHint says "Created on the host on first send."
+// in the language of msgs.
+func (msgs Messages) RemoteFolderHint() string {
+	return Catalog.Format(msgs.locale, "remoteFolderHint", nil)
+}
+
+// Keep says "Keep"
+// in the language the app shows.
+func Keep() string { return In(i18n.Locale()).Keep() }
+
+// Keep says "Keep"
+// in the language of msgs.
+func (msgs Messages) Keep() string {
+	return Catalog.Format(msgs.locale, "keep", nil)
+}
+
+// KeepDays says "{count, plural, one {# day} other {# days}}"
+// in the language the app shows.
+func KeepDays(count int) string { return In(i18n.Locale()).KeepDays(count) }
+
+// KeepDays says "{count, plural, one {# day} other {# days}}"
+// in the language of msgs.
+func (msgs Messages) KeepDays(count int) string {
+	return Catalog.Format(msgs.locale, "keepDays", map[string]any{"count": count})
+}
+
+// KeepForever says "Forever"
+// in the language the app shows.
+func KeepForever() string { return In(i18n.Locale()).KeepForever() }
+
+// KeepForever says "Forever"
+// in the language of msgs.
+func (msgs Messages) KeepForever() string {
+	return Catalog.Format(msgs.locale, "keepForever", nil)
+}
+
+// ImageSize says "Image size"
+// in the language the app shows.
+func ImageSize() string { return In(i18n.Locale()).ImageSize() }
+
+// ImageSize says "Image size"
+// in the language of msgs.
+func (msgs Messages) ImageSize() string {
+	return Catalog.Format(msgs.locale, "imageSize", nil)
+}
+
+// SizeOriginal says "Original"
+// in the language the app shows.
+func SizeOriginal() string { return In(i18n.Locale()).SizeOriginal() }
+
+// SizeOriginal says "Original"
+// in the language of msgs.
+func (msgs Messages) SizeOriginal() string {
+	return Catalog.Format(msgs.locale, "sizeOriginal", nil)
+}
+
+// SizeHint says "Claude scales larger images down to 1568 px."
+// in the language the app shows.
+func SizeHint() string { return In(i18n.Locale()).SizeHint() }
+
+// SizeHint says "Claude scales larger images down to 1568 px."
+// in the language of msgs.
+func (msgs Messages) SizeHint() string {
+	return Catalog.Format(msgs.locale, "sizeHint", nil)
+}
+
+// Shortcut says "Shortcut"
+// in the language the app shows.
+func Shortcut() string { return In(i18n.Locale()).Shortcut() }
+
+// Shortcut says "Shortcut"
+// in the language of msgs.
+func (msgs Messages) Shortcut() string {
+	return Catalog.Format(msgs.locale, "shortcut", nil)
+}
+
+// AfterSend says "After sending"
+// in the language the app shows.
+func AfterSend() string { return In(i18n.Locale()).AfterSend() }
+
+// AfterSend says "After sending"
+// in the language of msgs.
+func (msgs Messages) AfterSend() string {
+	return Catalog.Format(msgs.locale, "afterSend", nil)
+}
+
+// ClosePanel says "Close the panel"
+// in the language the app shows.
+func ClosePanel() string { return In(i18n.Locale()).ClosePanel() }
+
+// ClosePanel says "Close the panel"
+// in the language of msgs.
+func (msgs Messages) ClosePanel() string {
+	return Catalog.Format(msgs.locale, "closePanel", nil)
 }

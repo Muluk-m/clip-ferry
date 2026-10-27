@@ -1,38 +1,31 @@
-// Clip-share keeps a history of the images copied on this Mac, in a menu
-// bar panel: sending one copies it over ssh to a remote machine and puts
-// its path there on the clipboard, to paste into a CLI running on it.
+// Ferry keeps a history of the images copied on this Mac, in a menu bar
+// panel: sending one copies it over ssh to a remote machine and puts its
+// path there on the clipboard, to paste into a CLI running on it.
 package main
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
-	"image/png"
+	_ "embed"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
-	"clip-share/locales"
+	"clip-ferry/locales"
 )
 
 const maxShots = 100
 
-// summonKey opens the panel from anywhere. Raycast and Spotlight leave it
-// free, and Finder's Cmd+Alt+V moves files.
-const (
-	summonKey   = "Ctrl+Alt+V"
-	summonLabel = "⌃⌥V"
-)
+//go:embed resources/tray.png
+var trayPNG []byte
 
 // item is a shot with its thumbnail, decoded once off the main thread.
 type item struct {
@@ -40,23 +33,29 @@ type item struct {
 	thumb *ui.Bitmap
 }
 
-// app is the state the panel shows. All of it is read and changed on the
-// main thread: workers publish through update.
+// app is the state the panel and the settings show. All of it is read and
+// changed on the main thread: workers publish through update.
 type app struct {
 	dir     string
 	history *history
 	sender  sender
 	update  func(func())     // Window.Update
 	copy    func(string)     // mygo.Clipboard.WriteText
-	hide    func()           // hides the panel
+	close   func()           // closes the panel and gives the keyboard back
 	quit    func()           // mygo.App.Quit
 	login   func(bool) error // mygo.App.SetOpenAtLogin
+	rebind  func(old, new shortcut) error
+	locale  func(string) // mygo.App.SetLocale
+	prefs   func()       // opens the settings
 	now     func() time.Time
 
 	items   []item
+	sel     int // the row Enter sends
 	list    ui.ListState
-	hosts   []string
+	hosts   []string // ~/.ssh/config's; allHosts adds those added by hand
 	host    string
+	newHost string // typed in the settings
+	hostErr string
 	sending map[string]float64 // shot IDs being sent → share uploaded
 	sent    map[string]string  // host+"\x00"+ID → remote path
 	status  string
@@ -72,9 +71,12 @@ func newApp(dir string, hosts []string) *app {
 		sender:  sender{run: exec.CommandContext},
 		update:  func(fn func()) { fn() },
 		copy:    func(string) {},
-		hide:    func() {},
+		close:   func() {},
 		quit:    func() {},
 		login:   func(bool) error { return nil },
+		rebind:  func(shortcut, shortcut) error { return nil },
+		locale:  func(string) {},
+		prefs:   func() {},
 		now:     time.Now,
 		hosts:   hosts,
 		opts:    loadSettings(dir),
@@ -82,13 +84,51 @@ func newApp(dir string, hosts []string) *app {
 		sent:    map[string]string{},
 	}
 	a.host = a.opts.Host
-	if !slices.Contains(hosts, a.host) {
-		a.host = ""
-		if len(hosts) > 0 {
-			a.host = hosts[0]
+	a.keepHost()
+	return a
+}
+
+// allHosts are the hosts of ~/.ssh/config, then those added by hand.
+func (a *app) allHosts() []string {
+	all := slices.Clone(a.hosts)
+	for _, h := range a.opts.Hosts {
+		if !slices.Contains(all, h) {
+			all = append(all, h)
 		}
 	}
-	return a
+	return all
+}
+
+// keepHost falls back to the first host when the chosen one is gone.
+func (a *app) keepHost() {
+	all := a.allHosts()
+	if !slices.Contains(all, a.host) {
+		a.host = ""
+		if len(all) > 0 {
+			a.host = all[0]
+		}
+	}
+}
+
+// addHost adds the host typed in the settings, and chooses it.
+func (a *app) addHost() {
+	h, ok := parseHost(a.newHost)
+	switch {
+	case !ok:
+		a.hostErr = locales.ErrHostInvalid()
+	case slices.Contains(a.allHosts(), h):
+		a.hostErr = locales.ErrHostExists(h)
+	default:
+		a.opts.Hosts = append(a.opts.Hosts, h)
+		a.newHost, a.hostErr = "", ""
+		a.chooseHost(h)
+	}
+}
+
+func (a *app) removeHost(h string) {
+	a.opts.Hosts = slices.DeleteFunc(a.opts.Hosts, func(o string) bool { return o == h })
+	a.keepHost()
+	a.save()
 }
 
 func loadItem(s shot) item {
@@ -115,8 +155,8 @@ func (a *app) load() {
 	})
 }
 
-// addImage stores an image the watcher found. It runs on the watcher's
-// goroutine.
+// addImage stores an image the watcher found and selects it. It runs on
+// the watcher's goroutine.
 func (a *app) addImage(data []byte) {
 	s, _, err := a.history.add(data, a.now())
 	if err != nil {
@@ -130,6 +170,7 @@ func (a *app) addImage(data []byte) {
 		if len(a.items) > maxShots {
 			a.items = a.items[:maxShots]
 		}
+		a.sel = 0
 	})
 }
 
@@ -137,24 +178,37 @@ func (a *app) setStatus(msg string, failed bool) { a.status, a.failed = msg, fai
 
 func sentKey(host, id string) string { return host + "\x00" + id }
 
-// send copies an image to the chosen host. It is a click handler.
+// opened resets the panel for a new look: the newest image selected, the
+// last outcome kept only if it failed.
+func (a *app) opened() {
+	a.sel = 0
+	a.list.ScrollIntoView(0)
+	if !a.failed && len(a.sending) == 0 {
+		a.status = ""
+	}
+	a.warm()
+}
+
+// send copies an image to the chosen host. It runs on the main thread.
 func (a *app) send(it item) {
 	host := a.host
 	if host == "" {
-		a.setStatus(locales.StatusPickHost(), true)
+		a.setStatus(locales.ChooseHost(), true)
 		return
 	}
 	if _, busy := a.sending[it.ID]; busy {
 		return
 	}
 	a.sending[it.ID] = 0
-	a.setStatus(locales.StatusSendingTo(host), false)
+	a.setStatus(locales.StatusSending(0), false)
 	opts := a.opts.sendOptions()
 	go func() {
 		path, err := a.sender.send(context.Background(), host, it.shot, opts, func(done, total int64) {
 			a.update(func() {
 				if _, busy := a.sending[it.ID]; busy {
-					a.sending[it.ID] = float64(done) / float64(max(total, 1))
+					p := float64(done) / float64(max(total, 1))
+					a.sending[it.ID] = p
+					a.setStatus(locales.StatusSending(int(p*100)), false)
 				}
 			})
 		})
@@ -164,13 +218,31 @@ func (a *app) send(it item) {
 		a.update(func() {
 			delete(a.sending, it.ID)
 			if err != nil {
-				a.setStatus(locales.StatusSendFailed(err.Error()), true)
+				a.setStatus(sendFailure(host, err), true)
 				return
 			}
 			a.sent[sentKey(host, it.ID)] = path
-			a.setStatus(locales.StatusCopied(path), false)
+			a.setStatus(locales.StatusCopied(), false)
+			if a.opts.AutoHide {
+				a.close()
+			}
 		})
 	}()
+}
+
+// sendFailure names what went wrong in a few words: ssh's own message
+// only when it is not one of the usual two.
+func sendFailure(host string, err error) string {
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"could not resolve", "connection refused", "timed out", "no route", "unreachable", "host is down", "connection closed", "connection reset"} {
+		if strings.Contains(msg, s) {
+			return locales.StatusCantReach(host)
+		}
+	}
+	if strings.Contains(msg, "permission denied") {
+		return locales.StatusLoginRefused(host)
+	}
+	return locales.StatusSendFailed(err.Error())
 }
 
 // warm connects to the chosen host while the user picks an image.
@@ -180,107 +252,71 @@ func (a *app) warm() {
 	}
 }
 
-func (a *app) clearHistory() {
-	if err := a.history.clear(); err != nil {
-		a.setStatus(locales.StatusClearFailed(err.Error()), true)
+func (a *app) move(by int) {
+	if len(a.items) == 0 {
 		return
 	}
-	a.items = nil
+	a.sel = max(0, min(a.sel+by, len(a.items)-1))
+	a.list.ScrollIntoView(a.sel)
+}
+
+func (a *app) remove(id string) {
+	i := slices.IndexFunc(a.items, func(it item) bool { return it.ID == id })
+	if i < 0 {
+		return
+	}
+	a.history.remove(a.items[i].shot)
+	a.items = slices.Delete(a.items, i, i+1)
+	a.sel = max(0, min(a.sel, len(a.items)-1))
+}
+
+func (a *app) clearHistory() {
+	if err := a.history.clear(); err != nil {
+		a.setStatus(locales.StatusDeleteFailed(err.Error()), true)
+		return
+	}
+	a.items, a.sel = nil, 0
 	a.setStatus(locales.StatusCleared(), false)
 }
 
-func (a *app) toggleLogin() {
-	if err := a.login(a.atLogin); err != nil {
-		a.atLogin = !a.atLogin
-		a.setStatus(locales.StatusLoginFailed(err.Error()), true)
+func (a *app) setLogin(on bool) {
+	if err := a.login(on); err != nil {
+		a.setStatus(locales.StatusLoginFailed(), true)
+		return
 	}
+	a.atLogin = on
 }
 
-func (a *app) chooseHost() {
+func (a *app) chooseHost(host string) {
+	a.host = host
+	a.save()
+	a.warm()
+}
+
+func (a *app) chooseShortcut(k shortcut) {
+	old := a.opts.shortcut()
+	if k == old {
+		return
+	}
+	if err := a.rebind(old, k); err != nil {
+		a.setStatus(locales.StatusShortcutTaken(k.label), true)
+		return
+	}
+	a.opts.Shortcut = k.accel
+	a.save()
+}
+
+func (a *app) chooseLanguage(tag string) {
+	a.opts.Language = tag
+	a.locale(tag)
+	a.save()
+}
+
+func (a *app) save() {
 	a.opts.Host = a.host
 	if err := saveSettings(a.dir, a.opts); err != nil {
 		a.setStatus(locales.StatusSettingsFailed(err.Error()), true)
 	}
-	a.warm()
-}
-
-func (a *app) view(c *ui.Context) {
-	if c.Shortcut(0, ui.KeyEscape) || c.Shortcut(ui.Cmd, ui.KeyW) {
-		a.hide()
-	}
-	c.OnShortcut(ui.Cmd, ui.KeyQ, a.quit)
-	// Times such as "3 min ago" go stale while the panel stays open.
-	c.After(time.Minute)
-	t := c.Theme()
-	now := a.now()
-	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).Gap(2).Children(func() {
-				ui.Text(c, "Clip Share").FontSize(17).Bold()
-				ui.Text(c, locales.AppSubtitle(summonLabel)).FontSize(11).TextColor(t.TextMuted)
-			})
-			if len(a.hosts) == 0 {
-				ui.Text(c, locales.NoHosts()).FontSize(11).TextColor(t.Danger)
-			} else {
-				ui.Select(c.Key("host"), &a.host, a.hosts).Label(locales.HostLabel()).Width(150).OnChange(a.chooseHost)
-			}
-		})
-		ui.Divider(c)
-		a.list.Label = func(i int) string { return a.items[i].ID }
-		ui.List(c.Key("shots"), &a.list, len(a.items)).Grow(1).Gap(4).
-			ItemKey(func(i int) any { return a.items[i].ID }).
-			Rows(func(row ui.ListRow) { a.row(row.Context, a.items[row.Index], now) }).
-			Children(func() {
-				if len(a.items) == 0 {
-					ui.Column(c).Grow(1).Center().Gap(6).Padding(24).Children(func() {
-						ui.Text(c, locales.EmptyTitle()).FontSize(14).Bold()
-						ui.Text(c, locales.EmptyHint()).FontSize(12).TextColor(t.TextMuted)
-					})
-				}
-			})
-		ui.Divider(c)
-		status, color := a.status, t.TextMuted
-		if status == "" {
-			status = locales.ImageCount(len(a.items))
-		}
-		if a.failed {
-			color = t.Danger
-		}
-		ui.Text(c, status).FontSize(11).TextColor(color).MaxLines(2).Ellipsis("…")
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Checkbox(c.Key("login"), &a.atLogin, locales.OpenAtLogin()).OnChange(a.toggleLogin)
-			ui.Spacer(c)
-			ui.Button(c, locales.Clear()).Disabled(len(a.items) == 0).OnClick(a.clearHistory)
-			ui.Button(c, locales.Quit()).OnClick(a.quit)
-		})
-	})
-}
-
-func (a *app) row(c *ui.Context, it item, now time.Time) {
-	t := c.Theme()
-	ui.Row(c).Gap(10).Padding(6, 4).AlignItems(ui.Center).Children(func() {
-		if it.thumb != nil {
-			ui.Image(c, it.thumb).Size(84, 56).Fit(ui.Cover).Radius(6)
-		} else {
-			ui.Column(c).Size(84, 56).Radius(6).Background(t.Surface)
-		}
-		ui.Column(c).Grow(1).Gap(3).Children(func() {
-			ui.Text(c, ago(it.Taken, now)).FontSize(13)
-			detail := fmt.Sprintf("%d × %d", it.W, it.H)
-			if a.sent[sentKey(a.host, it.ID)] != "" {
-				detail += " · " + locales.SentTag()
-			}
-			ui.Text(c, detail).FontSize(11).TextColor(t.TextMuted)
-		})
-		label := locales.Send()
-		progress, busy := a.sending[it.ID]
-		if busy {
-			label = locales.SendingPercent(int(progress * 100))
-		}
-		ui.PrimaryButton(c, label).Label(locales.SendImage(it.ID)).
-			Disabled(busy || a.host == "").
-			OnClick(func() { a.send(it) })
-	})
 }
 
 // ago says when an image was copied, the way a clipboard history does.
@@ -298,66 +334,55 @@ func ago(t, now time.Time) string {
 	}
 }
 
-// showPanel places the panel below the tray icon. A crowded menu bar can
-// push the icon off the screen, behind the notch or past the edge: the
-// panel then shows on the display of the pointer, a third of the way down,
-// as launchers do.
-func showPanel(win *mygo.Window, tray *mygo.Tray, onShow func()) {
-	anchor := tray.Bounds()
-	center := mygo.Point{X: anchor.X + anchor.Width/2, Y: anchor.Y + anchor.Height/2}
-	d := mygo.Screen.DisplayNearestPoint(center)
-	b := win.Bounds()
-	area := d.WorkArea
-	var x, y int
-	if anchor.Width > 0 && anchor.Height > 0 && contains(d.Bounds, center) {
-		x = anchor.X + (anchor.Width-b.Width)/2
-		y = anchor.Y + anchor.Height + 6
-		if y+b.Height > area.Y+area.Height {
-			y = anchor.Y - b.Height - 6
-		}
-	} else {
-		area = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
-		x = area.X + (area.Width-b.Width)/2
-		y = area.Y + (area.Height-b.Height)/3
+// trayVisible reports whether the tray icon shows on a display. A crowded
+// menu bar pushes icons behind the notch or past the edge, where a popover
+// would hang from nothing.
+func trayVisible(tray *mygo.Tray) bool {
+	b := tray.Bounds()
+	if b.Width <= 0 || b.Height <= 0 {
+		return false
 	}
-	x = max(area.X, min(x, area.X+max(0, area.Width-b.Width)))
-	y = max(area.Y, min(y, area.Y+max(0, area.Height-b.Height)))
-	win.SetPosition(x, y)
-	win.Show()
-	onShow()
+	center := mygo.Point{X: b.X + b.Width/2, Y: b.Y + b.Height/2}
+	return contains(mygo.Screen.DisplayNearestPoint(center).Bounds, center)
 }
 
 func contains(r mygo.Rectangle, p mygo.Point) bool {
 	return p.X >= r.X && p.X < r.X+r.Width && p.Y >= r.Y && p.Y < r.Y+r.Height
 }
 
-// trayIcon draws a clipboard, black on transparent for macOS to tint.
-func trayIcon() []byte {
-	img := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	ink := color.NRGBA{R: 79, G: 124, B: 255, A: 255}
-	if runtime.GOOS == "darwin" {
-		ink = color.NRGBA{A: 255}
-	}
-	for _, r := range []image.Rectangle{
-		image.Rect(6, 5, 26, 8), image.Rect(6, 26, 26, 29), // board
-		image.Rect(6, 8, 9, 26), image.Rect(23, 8, 26, 26),
-		image.Rect(12, 2, 20, 9),                               // clip
-		image.Rect(12, 14, 20, 16), image.Rect(12, 19, 18, 21), // lines
-	} {
-		draw.Draw(img, r, image.NewUniform(ink), image.Point{}, draw.Src)
-	}
-	var b bytes.Buffer
-	_ = png.Encode(&b, img)
-	return b.Bytes()
+// centerPanel shows the panel on the display of the pointer, a third of
+// the way down, as launchers do.
+func centerPanel(win *mygo.Window) {
+	area := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint()).WorkArea
+	b := win.Bounds()
+	win.SetPosition(area.X+(area.Width-b.Width)/2, area.Y+(area.Height-b.Height)/3)
+	win.Show()
 }
+
+// moveOldData moves the history kept under the app's old name. MyGo makes
+// the new folder before the app starts, so it moves what is in it.
+func moveOldData(dir string) {
+	old := filepath.Join(filepath.Dir(dir), "Clip Share")
+	for _, name := range []string{"images", "thumbs", "settings.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); errors.Is(err, os.ErrNotExist) {
+			_ = os.Rename(filepath.Join(old, name), filepath.Join(dir, name))
+		}
+	}
+	_ = os.Remove(old) // once empty
+}
+
+const (
+	panelWidth  = 340
+	panelHeight = 420
+)
 
 func main() {
 	if !mygo.App.RequestSingleInstanceLock() {
 		return // the running app shows its panel
 	}
-	mygo.App.SetName("Clip Share")
+	mygo.App.SetName("Ferry")
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
-	mygo.App.OnWindowAllClosed(func() {})
+	mygo.App.OnWindowAllClosed(func() {}) // the panel closes; the app stays
 	var quitting bool
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { quitting = true })
 	mygo.App.WhenReady(func() {
@@ -365,62 +390,151 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		moveOldData(dir)
 		home, _ := os.UserHomeDir()
 		a := newApp(dir, sshHosts(filepath.Join(home, ".ssh", "config")))
-		placeTrayRight("clip-share", 420)
+		placeTrayRight("ferry", 420)
 		tray, err := mygo.NewTray(mygo.TrayOptions{
-			ID:             "clip-share",
-			Icon:           trayIcon(),
+			ID:             "ferry",
+			Icon:           trayPNG,
 			IconIsTemplate: true,
-			ToolTip:        locales.TrayTooltip(summonLabel),
+			ToolTip:        locales.TrayTooltip(a.opts.shortcut().label),
 		})
 		if err != nil {
 			log.Fatal("tray: ", err)
 		}
-		// A panel takes the keyboard without activating the app, so the
-		// terminal keeps its place in front and has the keyboard back once
-		// the panel hides.
-		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:         "Clip Share",
+
+		// The popover hangs from the tray icon. Where the icon does not
+		// show, the same view opens in a panel in the middle of the
+		// screen, which takes the keyboard without activating the app.
+		var popover, settingsWin *mygo.Window
+		panel := mygo.NewWindow(mygo.WindowOptions{
+			Title:         "Ferry",
 			Panel:         true,
-			Width:         380,
-			Height:        520,
+			Width:         panelWidth,
+			Height:        panelHeight,
 			Hidden:        true,
 			Frameless:     true,
 			DisableResize: true,
+			Transparent:   true,
+			Vibrancy:      mygo.VibrancyPopover,
+			CornerRadius:  12,
 			Content:       ui.View(a.view),
 		})
-		a.update = win.Update
-		a.copy = mygo.Clipboard.WriteText
-		a.hide = win.Hide
-		a.quit = mygo.App.Quit
-		a.login = mygo.App.SetOpenAtLogin
-		a.atLogin = mygo.App.OpenAtLogin()
-		win.OnBlur(win.Hide)
-		win.OnClose(func(e *mygo.CloseEvent) {
-			// Escape and Cmd+W hide the panel; quitting closes it.
+		panel.OnBlur(panel.Hide)
+		panel.OnClose(func(e *mygo.CloseEvent) {
 			if !quitting {
 				e.PreventDefault()
-				win.Hide()
+				panel.Hide()
 			}
 		})
-		show := func() { showPanel(win, tray, a.warm) }
+		a.update = func(fn func()) {
+			panel.Update(func() {
+				fn()
+				for _, w := range []*mygo.Window{popover, settingsWin} {
+					if w != nil {
+						w.Invalidate()
+					}
+				}
+			})
+		}
+		open := func() bool { return popover != nil || panel.IsVisible() }
+		var place func(tries int)
+		// place opens the popover once the icon has its place in the menu
+		// bar, which it lacks for a moment after the app starts.
+		place = func(tries int) {
+			if open() {
+				return
+			}
+			if !trayVisible(tray) {
+				if tries > 0 {
+					time.AfterFunc(100*time.Millisecond, func() { panel.Update(func() { place(tries - 1) }) })
+				} else {
+					centerPanel(panel)
+				}
+				return
+			}
+			popover = mygo.NewFlyout(mygo.FlyoutOptions{
+				Tray:      tray,
+				Placement: mygo.PlacementBottom,
+				Width:     panelWidth,
+				Height:    panelHeight,
+				Focusable: true,
+				Shadow:    true,
+				Popover:   true,
+				Content:   ui.View(a.view),
+			})
+			popover.OnClosed(func() { popover = nil })
+		}
+		show := func() {
+			if open() {
+				return
+			}
+			a.opened()
+			place(10)
+		}
+		a.close = func() {
+			activated := popover != nil
+			if popover != nil {
+				popover.Close()
+			}
+			panel.Hide()
+			// The popover activated the app to take the keyboard: hiding
+			// the app gives it back to the terminal.
+			if activated && settingsWin == nil {
+				mygo.App.Hide()
+			}
+		}
 		toggle := func() {
-			if win.IsVisible() {
-				win.Hide()
+			if open() {
+				a.close()
 			} else {
 				show()
 			}
 		}
-		if err := mygo.GlobalShortcut.Register(summonKey, toggle); err != nil {
-			a.setStatus(locales.StatusShortcutTaken(summonLabel, err.Error()), true)
+		a.copy = mygo.Clipboard.WriteText
+		a.quit = mygo.App.Quit
+		a.login = mygo.App.SetOpenAtLogin
+		a.atLogin = mygo.App.OpenAtLogin()
+		a.locale = mygo.App.SetLocale
+		a.rebind = func(old, k shortcut) error {
+			mygo.GlobalShortcut.Unregister(old.accel)
+			if err := mygo.GlobalShortcut.Register(k.accel, toggle); err != nil {
+				_ = mygo.GlobalShortcut.Register(old.accel, toggle)
+				return err
+			}
+			tray.SetToolTip(locales.TrayTooltip(k.label))
+			return nil
+		}
+		a.prefs = func() {
+			if popover != nil {
+				popover.Close()
+			}
+			panel.Hide()
+			if settingsWin != nil {
+				settingsWin.Focus()
+				return
+			}
+			settingsWin = mygo.NewWindow(mygo.WindowOptions{
+				Title:         locales.SettingsTitle(),
+				Width:         480,
+				Height:        620,
+				DisableResize: true,
+				Content:       ui.View(a.settingsView),
+			})
+			settingsWin.OnClosed(func() { settingsWin = nil })
+			settingsWin.Center()
+			mygo.App.Focus()
+		}
+		if err := mygo.GlobalShortcut.Register(a.opts.shortcut().accel, toggle); err != nil {
+			a.setStatus(locales.StatusShortcutTaken(a.opts.shortcut().label), true)
 		}
 		// Opening the app again, from Spotlight or Launchpad, shows the
 		// panel: the way in when the menu bar has no room for the icon.
 		mygo.App.OnSecondInstance(func([]string, string) { show() })
-		mygo.App.OnActivate(func(bool) { show() })
 		menu := mygo.NewMenu([]*mygo.MenuItem{
 			{Label: locales.MenuOpen(), Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
+			{Label: locales.MenuSettings(), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.prefs() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		})
@@ -429,7 +543,7 @@ func main() {
 		} else {
 			tray.OnClick(toggle)
 			tray.OnRightClick(func() {
-				win.Hide()
+				a.close()
 				tray.SetMenu(menu)
 				defer tray.SetMenu(nil)
 				tray.PopUpMenu()

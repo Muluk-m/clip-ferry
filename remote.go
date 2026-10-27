@@ -6,14 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
-	"clip-share/locales"
+	"clip-ferry/locales"
 )
 
 // sshHosts returns the concrete Host aliases of an ssh config, following
@@ -75,6 +77,36 @@ func sshHosts(configPath string) []string {
 	return hosts
 }
 
+// parseHost checks a host typed in the settings: user@host, a Host alias,
+// or ssh://user@host:port, which ssh takes as they are. Nothing in it may
+// read as an option of ssh.
+func parseHost(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.HasPrefix(s, "-") || strings.ContainsAny(s, " \t'\"`$;&|<>()\\") {
+		return "", false
+	}
+	if rest, ok := strings.CutPrefix(s, "ssh://"); ok {
+		u, err := url.Parse(s)
+		if err != nil || u.Hostname() == "" || u.Path != "" || strings.HasPrefix(rest, "-") {
+			return "", false
+		}
+		if p := u.Port(); p != "" {
+			if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+				return "", false
+			}
+		}
+		return s, true
+	}
+	user, host, ok := strings.Cut(s, "@")
+	if !ok {
+		host, user = s, ""
+	}
+	if host == "" || strings.HasPrefix(host, "-") || (ok && user == "") || strings.ContainsAny(host, "@/") {
+		return "", false
+	}
+	return s, true
+}
+
 // isGitForge tells the aliases for pushing to a forge, which take no
 // files, from machines.
 func isGitForge(host string) bool {
@@ -115,9 +147,12 @@ type sendOptions struct {
 func sshArgs(host string, extra ...string) []string {
 	return append([]string{
 		"-o", "BatchMode=yes",
+		// A host added by hand is new to known_hosts: trust it the first
+		// time, as ssh asks to, and refuse it if its key changes.
+		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ConnectTimeout=8",
 		"-o", "ControlMaster=auto",
-		"-o", "ControlPath=/tmp/clip-share-%C",
+		"-o", "ControlPath=/tmp/ferry-%C",
 		"-o", "ControlPersist=30m",
 		"-o", "ServerAliveInterval=30",
 		host,

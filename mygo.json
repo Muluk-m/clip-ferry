@@ -1,6 +1,6 @@
 {
-  "name": "Clip Share",
-  "identifier": "com.muluk.clipshare",
+  "name": "Ferry",
+  "identifier": "com.muluk.ferry",
   "version": "0.1.0",
   "out": "build",
   "macos": {

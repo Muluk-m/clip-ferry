@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -20,7 +21,7 @@ import (
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
-	"clip-share/locales"
+	"clip-ferry/locales"
 )
 
 func pngData(t *testing.T, w, h int, c color.Color) []byte {
@@ -162,7 +163,7 @@ func TestHelperProcess(t *testing.T) {
 	cmd := args[len(args)-1]
 	name := cmd[strings.Index(cmd, "cat > ")+len("cat > "):]
 	name = name[:strings.Index(name, ";")]
-	fmt.Printf("Welcome to the box\n/home/me/.cache/clip-share/%s\n", name)
+	fmt.Printf("Welcome to the box\n/home/me/.cache/ferry/%s\n", name)
 	fmt.Fprintf(os.Stderr, "%s %d", strings.Join(args[:len(args)-1], " "), len(data))
 	os.Exit(0)
 }
@@ -186,7 +187,7 @@ func TestSend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "/home/me/.cache/clip-share/" + s.ID + "-1568.png"; path != want {
+	if want := "/home/me/.cache/ferry/" + s.ID + "-1568.png"; path != want {
 		t.Errorf("path %q, want %q", path, want)
 	}
 	if len(progress) == 0 || progress[len(progress)-1] == 0 {
@@ -283,11 +284,24 @@ func TestPrepareUpload(t *testing.T) {
 
 func TestChinese(t *testing.T) {
 	zh := locales.In("zh-Hans")
-	if got := zh.ImageCount(3); got != "3 张图片，仅保存在本机" {
+	if got := zh.StatusCantReach("mini"); got != "无法连接 mini" {
 		t.Errorf("zh %q", got)
 	}
-	if got := locales.In("en").ImageCount(1); got != "1 image, kept on this Mac only" {
+	if got := locales.In("en").KeepDays(1); got != "1 day" {
 		t.Errorf("en %q", got)
+	}
+}
+
+func TestSendFailure(t *testing.T) {
+	for _, c := range []struct{ err, want string }{
+		{"ssh: connect to host mini port 22: Operation timed out", "Can't reach mini"},
+		{"ssh: Could not resolve hostname mini: nodename nor servname provided", "Can't reach mini"},
+		{"me@mini: Permission denied (publickey).", "mini refused the SSH key"},
+		{"sh: 1: cannot create x.png: Read-only file system", "Send failed: sh: 1: cannot create x.png: Read-only file system"},
+	} {
+		if got := sendFailure("mini", errors.New(c.err)); got != c.want {
+			t.Errorf("sendFailure(%q) = %q, want %q", c.err, got, c.want)
+		}
 	}
 }
 
@@ -298,7 +312,8 @@ func run(updates chan func(), done func() bool) {
 	}
 }
 
-// The view runs without a window in tests, which click as a user would.
+// The view runs without a window in tests, which click and type as a
+// user would.
 func TestView(t *testing.T) {
 	dir := t.TempDir()
 	a := newApp(dir, []string{"mini", "gpu"})
@@ -306,12 +321,14 @@ func TestView(t *testing.T) {
 	a.update = func(fn func()) { updates <- fn }
 	var copied []string
 	a.copy = func(s string) { copied = append(copied, s) }
+	closed := 0
+	a.close = func() { closed++ }
 	var calls []string
 	a.sender = fakeSSH("ok", &calls)
-	tt := ui.NewTester(a.view, 380, 520)
+	tt := ui.NewTester(a.view, panelWidth, panelHeight)
 	a.now = tt.Now
-	if !tt.HasText("No images yet") || a.host != "mini" {
-		t.Fatalf("empty view: host %q, texts %q", a.host, tt.Texts())
+	if !tt.HasText("Copy or capture an image") || !tt.HasText("mini") {
+		t.Fatalf("empty view: texts %q", tt.Texts())
 	}
 
 	a.addImage(pngData(t, 1920, 1080, color.White))
@@ -321,45 +338,82 @@ func TestView(t *testing.T) {
 	if !tt.HasText("1920 × 1080") || !tt.HasText("Just now") {
 		t.Fatalf("texts %q after an image", tt.Texts())
 	}
-	if err := tt.Click("Send image " + id); err != nil {
-		t.Fatal(err)
-	}
-	if !tt.HasText("0%") {
+	tt.Key(0, ui.KeyEnter) // sends the newest, selected
+	if !tt.HasText("Sending 0%") {
 		t.Errorf("texts %q while sending", tt.Texts())
 	}
 	run(updates, func() bool { _, busy := a.sending[id]; return !busy })
 	tt.Frame()
 	up, _ := prepareUpload(a.items[0].Path, claudeMaxEdge)
-	want := "/home/me/.cache/clip-share/" + id + "-1568" + up.ext
+	want := "/home/me/.cache/ferry/" + id + "-1568" + up.ext
 	if !slices.Equal(copied, []string{want}) {
 		t.Errorf("copied %q, want %q", copied, want)
 	}
-	if !tt.HasText("Remote path copied: "+want) || !tt.HasText("1920 × 1080 · Sent") {
-		t.Errorf("texts %q after sending", tt.Texts())
+	if !tt.HasText("Path copied") || !tt.HasText("Sent") || closed != 1 {
+		t.Errorf("texts %q after sending, closed %d times", tt.Texts(), closed)
 	}
 	if !strings.Contains(calls[0], " mini ") {
 		t.Errorf("sent with %q", calls[0])
 	}
 
-	var login []bool
-	a.login = func(on bool) error { login = append(login, on); return nil }
-	if err := tt.Click("Open at login"); err != nil {
-		t.Fatal(err)
-	}
+	// A new image goes on top, selected; 2 sends the one below it.
+	a.addImage(pngData(t, 800, 600, color.Black))
+	(<-updates)()
 	tt.Frame()
-	if !a.atLogin || !slices.Equal(login, []bool{true}) {
-		t.Errorf("open at login %v, calls %v", a.atLogin, login)
+	if a.sel != 0 || len(a.items) != 2 || a.items[1].ID != id {
+		t.Fatalf("selection %d of %d after a second image", a.sel, len(a.items))
+	}
+	tt.Key(0, ui.Key2)
+	run(updates, func() bool { _, busy := a.sending[id]; return !busy })
+	if len(calls) != 2 || a.sel != 1 {
+		t.Errorf("%d sends, selection %d after pressing 2", len(calls), a.sel)
+	}
+	tt.Key(0, ui.KeyUp)
+	tt.Key(0, ui.KeyBackspace) // deletes the newest
+	tt.Frame()
+	if len(a.items) != 1 || a.items[0].ID != id {
+		t.Errorf("items %v after deleting", a.items)
 	}
 
 	tt.Advance(5 * time.Minute)
 	if !tt.HasText("5 min ago") {
 		t.Errorf("texts %q five minutes on", tt.Texts())
 	}
-	if err := tt.Click("Clear"); err != nil {
+	if err := tt.Click("More"); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.HasText("No images yet") || !tt.HasText("History cleared") {
+	if err := tt.ChooseMenuItem("Clear History"); err != nil {
+		t.Fatalf("%v; menu %q", err, tt.Menu())
+	}
+	tt.Frame()
+	if !tt.HasText("Copy or capture an image") || !tt.HasText("Cleared") {
 		t.Errorf("texts %q after clearing", tt.Texts())
+	}
+}
+
+func TestSettings(t *testing.T) {
+	dir := t.TempDir()
+	a := newApp(dir, []string{"mini"})
+	tt := ui.NewTester(a.settingsView, 460, 430)
+	for _, s := range []string{"Remote folder", "7 days", "1568 px", "⌃⌥V", "System"} {
+		if !tt.HasText(s) {
+			t.Errorf("no %q in %q", s, tt.Texts())
+		}
+	}
+	// A shortcut another app holds keeps the one there was.
+	a.rebind = func(_, k shortcut) error {
+		if k.accel == "Ctrl+Shift+V" {
+			return errors.New("taken")
+		}
+		return nil
+	}
+	a.chooseShortcut(shortcuts[1])
+	if a.opts.Shortcut != "Ctrl+Alt+V" || a.status != "⌃⇧V is in use by another app" {
+		t.Errorf("shortcut %q, status %q", a.opts.Shortcut, a.status)
+	}
+	a.chooseShortcut(shortcuts[2])
+	if got := loadSettings(dir); got.Shortcut != "Alt+Shift+V" || got.Host != "mini" {
+		t.Errorf("saved %+v", got)
 	}
 }
 
@@ -383,11 +437,65 @@ func TestAgo(t *testing.T) {
 	}{
 		{10 * time.Second, "Just now"},
 		{12 * time.Minute, "12 min ago"},
-		{3 * time.Hour, "Today 12:00 PM"},
+		{3 * time.Hour, "12:00 PM"},
 		{30 * time.Hour, "Oct 26 9:00 AM"},
 	} {
 		if got := ago(now.Add(-c.d), now); got != c.want {
 			t.Errorf("ago(%v) = %q, want %q", c.d, got, c.want)
 		}
+	}
+}
+
+func TestParseHost(t *testing.T) {
+	for s, ok := range map[string]bool{
+		"me@box":                 true,
+		"box":                    true,
+		" me@10.0.0.2 ":          true,
+		"ssh://me@box:2222":      true,
+		"ssh://box":              true,
+		"":                       false,
+		"-oProxyCommand=evil":    false,
+		"me@-oProxyCommand=evil": false,
+		"ssh://-oX@box":          false,
+		"ssh://me@box:99999":     false,
+		"ssh://me@box/path":      false,
+		"me@box; rm -rf /":       false,
+		"@box":                   false,
+		"me@":                    false,
+	} {
+		if _, got := parseHost(s); got != ok {
+			t.Errorf("parseHost(%q) = %v, want %v", s, got, ok)
+		}
+	}
+}
+
+func TestAddHost(t *testing.T) {
+	dir := t.TempDir()
+	a := newApp(dir, []string{"mini"})
+	a.newHost = "me@10.0.0.2"
+	a.addHost()
+	if a.host != "me@10.0.0.2" || a.newHost != "" || a.hostErr != "" {
+		t.Fatalf("host %q, field %q, error %q", a.host, a.newHost, a.hostErr)
+	}
+	a.newHost = "mini"
+	if a.addHost(); a.hostErr != "mini is already in the list" {
+		t.Errorf("error %q for a host of the config", a.hostErr)
+	}
+	if got := newApp(dir, []string{"mini"}); got.host != "me@10.0.0.2" || !slices.Equal(got.allHosts(), []string{"mini", "me@10.0.0.2"}) {
+		t.Errorf("after relaunch: host %q of %q", got.host, got.allHosts())
+	}
+
+	tt := ui.NewTester(a.view, panelWidth, panelHeight)
+	if err := tt.Click("Host"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"From ~/.ssh/config", "mini", "-", "Added", "me@10.0.0.2", "-", "Add Host…"}
+	if got := tt.Menu(); !slices.Equal(got, want) {
+		t.Errorf("host menu %q, want %q", got, want)
+	}
+
+	a.removeHost("me@10.0.0.2")
+	if a.host != "mini" || len(a.opts.Hosts) != 0 {
+		t.Errorf("after removing: host %q, added %q", a.host, a.opts.Hosts)
 	}
 }

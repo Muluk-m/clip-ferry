@@ -1,41 +1,100 @@
-# Clip Share
+<p align="center">
+  <img src="resources/icon.png" width="128" alt="Ferry">
+</p>
 
-在 SSH 到另一台机器上用 Claude Code 等 CLI 时，本机剪贴板里的图片粘贴不过去。Clip Share 常驻在 macOS 菜单栏，记录本机复制过的图片；在列表里点某张图的「发送」，它通过 SSH 把这一张图传到远端，再把**远端文件路径**写进本机剪贴板，到远端 CLI 里直接粘贴路径即可读图。
+<h1 align="center">Ferry</h1>
 
-- 只走 SSH：不要求同一局域网，跳板机、Tailscale、公网都可以，复用 `~/.ssh/config` 和 ssh-agent。
-- 按需发送：历史只保存在本机（最近 100 张），只有点过「发送」的那张图会离开本机。
-- 不监听任何端口。
+<p align="center">
+  Get screenshots from your Mac to Claude Code running on another machine over SSH.
+  <br>
+  <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-## 安装
+<p align="center">
+  <img src="docs/demo.gif" width="720" alt="Ferry demo">
+</p>
+
+When Claude Code runs on a remote machine over SSH, it can't read the screenshot on your Mac. Ferry lives in the menu bar and keeps a history of the images you copy or capture. Press ↵ and it sends that one image to the remote machine over SSH, then copies the image's absolute path on the remote machine. Paste the path into Claude Code and it reads the image.
+
+- **One image per send.** Only the image you pick goes over the network. There's no folder sync and no LAN share.
+- **Plain SSH.** It uses `/usr/bin/ssh` with your keys, your agent and your `~/.ssh/config`. Nothing needs installing on the remote machine.
+- **Fast.** It keeps the connection open after the first send, so later sends skip the handshake. Images are shrunk to 1568 px on the long edge, the largest size Claude reads, and sent as whichever of PNG and JPEG is smaller.
+- **Driven from the keyboard.** ⌃⌥V opens the panel. ↑↓ choose an image, ↵ sends it, 1–9 send by position, ⌫ deletes.
+
+<p align="center">
+  <img src="docs/panel-en.png" width="340" alt="Panel">
+  &nbsp;
+  <img src="docs/panel-dark-en.png" width="340" alt="Panel in dark mode">
+</p>
+
+## Install
+
+Download `ferry-<version>.dmg` from [Releases](../../releases/latest) and drag Ferry to Applications. It's a universal app for Apple silicon and Intel Macs, and needs macOS 12 or later.
+
+The app is signed but not notarized, so macOS blocks it the first time you open it. To let it run, either:
+
+- open **System Settings → Privacy & Security** and click **Open Anyway**, or
+- run `xattr -dr com.apple.quarantine /Applications/Ferry.app`.
+
+## Usage
+
+1. Copy an image or take a screenshot. It shows up in Ferry's history.
+2. Click the tray icon or press ⌃⌥V, choose a host at the top of the panel, and press ↵.
+3. When the panel says **Path copied**, paste the path into Claude Code on the remote machine:
+
+   ```
+   > why does this error happen? /home/me/.cache/ferry/5f91392be1766983-1568.png
+   ```
+
+To send an image again, select it and press ↵, or right-click it to send or delete it. **Settings** and **Clear History** are in the ⋯ menu.
+
+## Hosts
+
+The host menu lists where each host comes from:
+
+- **From ~/.ssh/config**: every concrete `Host` entry in your config, including files pulled in with `Include`. Wildcard entries and Git forges such as github.com are left out.
+- **Added**: hosts you add under Settings → Hosts, written as `user@host` or `ssh://user@host:2222`.
+
+Ferry runs ssh in the background (`BatchMode=yes`), so it can't ask for a password. Log in with a key or ssh-agent instead. You can check a host with `ssh <host> true`: if that runs without a prompt, Ferry can use the host. The first time Ferry connects to a host it trusts the host's key (`StrictHostKeyChecking=accept-new`), and it refuses the host if that key later changes.
+
+<p align="center">
+  <img src="docs/settings-en.png" width="420" alt="Settings">
+</p>
+
+## Settings
+
+| Setting | Default | |
+| --- | --- | --- |
+| Remote folder | `~/.cache/ferry` | Created on the first send. |
+| Keep | 7 days | Images older than this are deleted from the remote folder each time you send. |
+| Image size | 1568 px | 2560 px or the original are also available. |
+| After sending | Close the panel | |
+| Shortcut | ⌃⌥V | Also ⌃⇧V, ⌥⇧V or ⌃⌥Space. |
+| Language | System | English or 简体中文. |
+| Open at Login | Off | |
+
+Ferry keeps the last 100 images in `~/Library/Application Support/Ferry`.
+
+## Build
+
+You need Go 1.27 or later. [MyGo](https://github.com/egoist/mygo) is pinned in `go.mod` and runs through `go tool`.
 
 ```sh
-go tool mygo build -skip-dmg -skip-notarize
-ditto "build/darwin-arm64/Clip Share.app" "/Applications/Clip Share.app"
-open "/Applications/Clip Share.app"
+go test -p 1 ./...                      # tests
+go tool mygo dev                        # run from source
+go tool mygo build -skip-notarize       # signed .app and .dmg in build/
 ```
 
-需要 Go 1.27.3+（`go` 会按 `go.mod` 自动下载工具链）。签名身份在 `mygo.json` 的 `macos.signingIdentity`，当前用个人 Apple Development 证书，只供本机使用，没有公证。开发时用 `go tool mygo dev`，测试用 `go test ./...`。
+To sign with your own certificate, set `macos.signingIdentity` in `mygo.json`. Messages live in `locales/`; after editing them, run `go tool mygo generate`.
 
-## 使用
+The screenshots and the demo are drawn from the real views, with no screen needed:
 
-1. 按 **⌃⌥V**（或点菜单栏图标、或从 Spotlight 再次打开 Clip Share）唤出面板。菜单栏图标太多时系统可能把图标挤到看不见的地方，快捷键和再次打开始终可用。
-2. 右上角选择远端主机（列表来自 `~/.ssh/config`，会记住上次选择）。
-3. 截图或复制图片，它会自动出现在列表顶部。
-4. 点「发送」，状态栏显示 `已复制远端路径：…` 后，到远端 CLI 粘贴即可。
-5. 需要的话勾选左下角「开机启动」。
+```sh
+go run ./tools/rasterize resources/logo.svg resources/icon.png 1024
+PROMO_FRAMES=/tmp/frames go test -tags promo -run TestPromo .
+ffmpeg -f concat -safe 0 -i /tmp/frames/frames.txt -vf fps=30,format=yuv420p demo.mp4
+```
 
-面板是浮动 panel：弹出时不抢走当前应用（终端）的前台位置，失焦或按 Esc 即隐藏。
+## License
 
-远端主机需要能免交互登录（密钥或 agent），因为应用以 `BatchMode=yes` 调用 `/usr/bin/ssh`。
-
-## 细节
-
-| 项 | 说明 |
-| --- | --- |
-| 本机存储 | `~/Library/Application Support/Clip Share/`（`images/` 原图，`thumbs/` 缩略图） |
-| 远端存储 | `~/.cache/clip-share/<hash>.png`，每次发送时清理 7 天前的图片 |
-| 连接复用 | `ControlMaster=auto`、`ControlPersist=10m`，socket 在 `/tmp/clip-share-%C` |
-| 监听方式 | 每 0.7 秒比较 `NSPasteboard.changeCount`，变化且含图片时才读取；Finder 里复制的文件（带图标）会被忽略 |
-| 主机列表 | 跟随 `Include`，忽略 `*` 等通配和 GitHub/GitLab/Bitbucket 别名 |
-
-基于 [MyGo](https://github.com/egoist/mygo) 原生 UI（纯 Go，无 webview）。
+[MIT](LICENSE)

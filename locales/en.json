@@ -1,38 +1,37 @@
 {
   "@@locale": "en",
-  "appSubtitle": "{key} to open · Send copies the remote path",
-  "@appSubtitle": {
+  "noHosts": "No hosts yet",
+  "hostsFromConfig": "From ~/.ssh/config",
+  "hostsAdded": "Added",
+  "addHost": "Add Host…",
+  "sectionHosts": "Hosts",
+  "newHost": "New host",
+  "hostPlaceholder": "user@host or ssh://user@host:2222",
+  "add": "Add",
+  "removeHost": "Remove {host}",
+  "@removeHost": {
     "placeholders": {
-      "key": {
-        "type": "String",
-        "example": "⌃⌥V"
+      "host": {
+        "type": "String"
       }
     }
   },
-  "noHosts": "No hosts in ~/.ssh/config",
-  "hostLabel": "Remote host",
-  "emptyTitle": "No images yet",
-  "emptyHint": "Take a screenshot or copy an image and it shows up here",
-  "imageCount": "{count, plural, one {# image} other {# images}}, kept on this Mac only",
-  "@imageCount": {
+  "hostsHint": "Signs in with your SSH keys. Hosts in ~/.ssh/config are listed too.",
+  "errHostInvalid": "Enter user@host or ssh://user@host:port",
+  "errHostExists": "{host} is already in the list",
+  "@errHostExists": {
     "placeholders": {
-      "count": {
-        "type": "int"
+      "host": {
+        "type": "String"
       }
     }
   },
-  "openAtLogin": "Open at login",
-  "clear": "Clear",
-  "quit": "Quit",
+  "chooseHost": "Choose a host",
+  "hostLabel": "Host",
+  "more": "More",
+  "emptyHint": "Copy or capture an image",
   "send": "Send",
-  "sendingPercent": "{percent}%",
-  "@sendingPercent": {
-    "placeholders": {
-      "percent": {
-        "type": "int"
-      }
-    }
-  },
+  "delete": "Delete",
   "sendImage": "Send image {id}",
   "@sendImage": {
     "placeholders": {
@@ -41,7 +40,16 @@
       }
     }
   },
+  "percent": "{percent}%",
+  "@percent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
   "sentTag": "Sent",
+  "hint": "↵ Send   ⌫ Delete",
   "justNow": "Just now",
   "minutesAgo": "{count, plural, one {# min ago} other {# min ago}}",
   "@minutesAgo": {
@@ -51,7 +59,7 @@
       }
     }
   },
-  "todayAt": "Today {t, time, short}",
+  "todayAt": "{t, time, short}",
   "@todayAt": {
     "placeholders": {
       "t": {
@@ -67,23 +75,32 @@
       }
     }
   },
-  "statusSendingTo": "Sending to {host}…",
-  "@statusSendingTo": {
+  "statusSending": "Sending {percent}%",
+  "@statusSending": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "statusCopied": "Path copied",
+  "statusCantReach": "Can't reach {host}",
+  "@statusCantReach": {
     "placeholders": {
       "host": {
         "type": "String"
       }
     }
   },
-  "statusCopied": "Remote path copied: {path}",
-  "@statusCopied": {
+  "statusLoginRefused": "{host} refused the SSH key",
+  "@statusLoginRefused": {
     "placeholders": {
-      "path": {
+      "host": {
         "type": "String"
       }
     }
   },
-  "statusSendFailed": "Couldn't send: {error}",
+  "statusSendFailed": "Send failed: {error}",
   "@statusSendFailed": {
     "placeholders": {
       "error": {
@@ -107,24 +124,16 @@
       }
     }
   },
-  "statusClearFailed": "Couldn't clear the history: {error}",
-  "@statusClearFailed": {
+  "statusDeleteFailed": "Couldn't delete: {error}",
+  "@statusDeleteFailed": {
     "placeholders": {
       "error": {
         "type": "String"
       }
     }
   },
-  "statusCleared": "History cleared",
-  "statusPickHost": "Choose a remote host first (from ~/.ssh/config)",
-  "statusLoginFailed": "Couldn't change Open at login: {error}",
-  "@statusLoginFailed": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
+  "statusCleared": "Cleared",
+  "statusLoginFailed": "Couldn't turn on Open at Login",
   "statusSettingsFailed": "Couldn't save settings: {error}",
   "@statusSettingsFailed": {
     "placeholders": {
@@ -133,19 +142,16 @@
       }
     }
   },
-  "statusShortcutTaken": "{key} is taken by another app: {error}",
+  "statusShortcutTaken": "{key} is in use by another app",
   "@statusShortcutTaken": {
     "placeholders": {
       "key": {
         "type": "String"
-      },
-      "error": {
-        "type": "String"
       }
     }
   },
-  "errNoHost": "no remote host chosen",
-  "errBadPath": "the remote answered an unexpected path: {path}",
+  "errNoHost": "No host chosen",
+  "errBadPath": "Unexpected reply: {path}",
   "@errBadPath": {
     "placeholders": {
       "path": {
@@ -153,7 +159,7 @@
       }
     }
   },
-  "trayTooltip": "Clip Share — {key} to open",
+  "trayTooltip": "Ferry  {key}",
   "@trayTooltip": {
     "placeholders": {
       "key": {
@@ -161,5 +167,32 @@
       }
     }
   },
-  "menuOpen": "Open Clip Share"
+  "menuOpen": "Open Ferry",
+  "menuSettings": "Settings…",
+  "openAtLogin": "Open at Login",
+  "language": "Language",
+  "followSystem": "System",
+  "clearHistory": "Clear History",
+  "quit": "Quit Ferry",
+  "settingsTitle": "Ferry Settings",
+  "sectionSending": "Sending",
+  "sectionGeneral": "General",
+  "remoteFolder": "Remote folder",
+  "remoteFolderHint": "Created on the host on first send.",
+  "keep": "Keep",
+  "keepDays": "{count, plural, one {# day} other {# days}}",
+  "@keepDays": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "keepForever": "Forever",
+  "imageSize": "Image size",
+  "sizeOriginal": "Original",
+  "sizeHint": "Claude scales larger images down to 1568 px.",
+  "shortcut": "Shortcut",
+  "afterSend": "After sending",
+  "closePanel": "Close the panel"
 }
