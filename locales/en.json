@@ -1,0 +1,165 @@
+{
+  "@@locale": "en",
+  "appSubtitle": "{key} to open · Send copies the remote path",
+  "@appSubtitle": {
+    "placeholders": {
+      "key": {
+        "type": "String",
+        "example": "⌃⌥V"
+      }
+    }
+  },
+  "noHosts": "No hosts in ~/.ssh/config",
+  "hostLabel": "Remote host",
+  "emptyTitle": "No images yet",
+  "emptyHint": "Take a screenshot or copy an image and it shows up here",
+  "imageCount": "{count, plural, one {# image} other {# images}}, kept on this Mac only",
+  "@imageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "openAtLogin": "Open at login",
+  "clear": "Clear",
+  "quit": "Quit",
+  "send": "Send",
+  "sendingPercent": "{percent}%",
+  "@sendingPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "sendImage": "Send image {id}",
+  "@sendImage": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "sentTag": "Sent",
+  "justNow": "Just now",
+  "minutesAgo": "{count, plural, one {# min ago} other {# min ago}}",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "todayAt": "Today {t, time, short}",
+  "@todayAt": {
+    "placeholders": {
+      "t": {
+        "type": "DateTime"
+      }
+    }
+  },
+  "dateAt": "{t, date, ::MMMd} {t, time, short}",
+  "@dateAt": {
+    "placeholders": {
+      "t": {
+        "type": "DateTime"
+      }
+    }
+  },
+  "statusSendingTo": "Sending to {host}…",
+  "@statusSendingTo": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "statusCopied": "Remote path copied: {path}",
+  "@statusCopied": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "statusSendFailed": "Couldn't send: {error}",
+  "@statusSendFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "statusSaveFailed": "Couldn't save the image: {error}",
+  "@statusSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "statusLoadFailed": "Couldn't read the history: {error}",
+  "@statusLoadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "statusClearFailed": "Couldn't clear the history: {error}",
+  "@statusClearFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "statusCleared": "History cleared",
+  "statusPickHost": "Choose a remote host first (from ~/.ssh/config)",
+  "statusLoginFailed": "Couldn't change Open at login: {error}",
+  "@statusLoginFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "statusSettingsFailed": "Couldn't save settings: {error}",
+  "@statusSettingsFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "statusShortcutTaken": "{key} is taken by another app: {error}",
+  "@statusShortcutTaken": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "errNoHost": "no remote host chosen",
+  "errBadPath": "the remote answered an unexpected path: {path}",
+  "@errBadPath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "trayTooltip": "Clip Share — {key} to open",
+  "@trayTooltip": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    }
+  },
+  "menuOpen": "Open Clip Share"
+}

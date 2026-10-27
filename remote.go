@@ -12,13 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
-)
 
-// remoteDir is where images land on the remote machine. Images older than
-// remoteKeepDays are removed there on each send.
-const (
-	remoteDir      = "~/.cache/clip-share"
-	remoteKeepDays = 7
+	"clip-share/locales"
 )
 
 // sshHosts returns the concrete Host aliases of an ssh config, following
@@ -106,56 +101,122 @@ type sender struct {
 	run func(ctx context.Context, name string, args ...string) *exec.Cmd
 }
 
-// sshArgs keeps a master connection for a few minutes, so sends after the
+// sendOptions are the settings a send follows.
+type sendOptions struct {
+	dir      string // on the remote, ~/ for its home
+	keepDays int    // older images there are removed; 0 keeps them
+	maxEdge  int    // 0 sends the original
+}
+
+// sshArgs keeps a master connection for half an hour, so sends after the
 // first one skip the handshake. The socket lives in /tmp because macOS
 // limits socket paths to 104 bytes, which the per-user temp dir nearly
 // fills.
-func sshArgs(host, remoteCmd string) []string {
-	return []string{
+func sshArgs(host string, extra ...string) []string {
+	return append([]string{
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=8",
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPath=/tmp/clip-share-%C",
-		"-o", "ControlPersist=10m",
-		host, remoteCmd,
+		"-o", "ControlPersist=30m",
+		"-o", "ServerAliveInterval=30",
+		host,
+	}, extra...)
+}
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// remoteDirExpr is dir as a shell word, with ~/ expanded by the shell.
+func remoteDirExpr(dir string) string {
+	if dir == "~" {
+		return `"$HOME"`
 	}
+	if rest, ok := strings.CutPrefix(dir, "~/"); ok {
+		return `"$HOME"/` + shellQuote(rest)
+	}
+	return shellQuote(dir)
 }
 
-// remoteCommand writes stdin to the file and prints its absolute path.
-// The name is a hex ID, so it needs no quoting.
-func remoteCommand(id string) string {
-	name := id + ".png"
-	return fmt.Sprintf(
-		`mkdir -p %[1]s && cat > %[1]s/%[2]s && find %[1]s -name '*.png' -mtime +%[3]d -delete; echo "$HOME/.cache/clip-share/%[2]s"`,
-		remoteDir, name, remoteKeepDays)
+// remoteCommand writes stdin to the file and prints its absolute path. It
+// runs under sh, whatever the login shell (fish, nu) would make of it.
+func remoteCommand(o sendOptions, name string) string {
+	d := remoteDirExpr(o.dir)
+	script := fmt.Sprintf(`set -e; mkdir -p %[1]s; cd %[1]s; cat > %[2]s; `, d, name)
+	if o.keepDays > 0 {
+		script += fmt.Sprintf(`find . -maxdepth 1 -type f \( -name '*.png' -o -name '*.jpg' \) -mtime +%d -exec rm -f {} + 2>/dev/null || true; `, o.keepDays)
+	}
+	script += fmt.Sprintf(`printf '%%s/%%s\n' "$(pwd)" %s`, name)
+	return "sh -c " + shellQuote(script)
 }
 
-func (s sender) send(ctx context.Context, host string, sh shot) (string, error) {
+// warm opens the master connection ahead of a send, so picking an image
+// covers the handshake. It returns at once when one is open.
+func (s sender) warm(ctx context.Context, host string) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if s.run(ctx, "/usr/bin/ssh", sshArgs(host, "-O", "check")...).Run() == nil {
+		return nil
+	}
+	var stderr bytes.Buffer
+	cmd := s.run(ctx, "/usr/bin/ssh", sshArgs(host, "true")...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return sshError(err, &stderr)
+	}
+	return nil
+}
+
+func sshError(err error, stderr *bytes.Buffer) error {
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		msg = err.Error()
+	}
+	return errors.New(lastLine(msg))
+}
+
+// progressReader reports how much of the upload ssh has taken.
+type progressReader struct {
+	r      *bytes.Reader
+	total  int64
+	report func(done, total int64)
+	last   time.Time
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if now := time.Now(); p.report != nil && (now.Sub(p.last) > 100*time.Millisecond || p.r.Len() == 0) {
+		p.last = now
+		p.report(p.total-int64(p.r.Len()), p.total)
+	}
+	return n, err
+}
+
+func (s sender) send(ctx context.Context, host string, sh shot, o sendOptions, progress func(done, total int64)) (string, error) {
 	if host == "" {
-		return "", errors.New("未选择远端主机")
+		return "", errors.New(locales.ErrNoHost())
 	}
-	data, err := os.ReadFile(sh.Path)
+	up, err := prepareUpload(sh.Path, o.maxEdge)
 	if err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	name := sh.ID + up.ext
+	if o.maxEdge > 0 {
+		name = fmt.Sprintf("%s-%d%s", sh.ID, o.maxEdge, up.ext)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	// A GUI app's PATH lacks /usr/local and Homebrew: use the system ssh,
 	// which reads the same config and agent as the terminal.
-	cmd := s.run(ctx, "/usr/bin/ssh", sshArgs(host, remoteCommand(sh.ID))...)
-	cmd.Stdin = bytes.NewReader(data)
+	cmd := s.run(ctx, "/usr/bin/ssh", sshArgs(host, remoteCommand(o, name))...)
+	cmd.Stdin = &progressReader{r: bytes.NewReader(up.data), total: int64(len(up.data)), report: progress}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return "", errors.New(lastLine(msg))
+		return "", sshError(err, &stderr)
 	}
 	path := lastLine(strings.TrimSpace(stdout.String()))
-	if !strings.HasSuffix(path, sh.ID+".png") {
-		return "", fmt.Errorf("远端返回了意外的路径：%q", path)
+	if !strings.HasSuffix(path, "/"+name) {
+		return "", errors.New(locales.ErrBadPath(path))
 	}
 	return path, nil
 }
