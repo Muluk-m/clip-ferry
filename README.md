@@ -6,19 +6,25 @@
 - 按需发送：历史只保存在本机（最近 100 张），只有点过「发送」的那张图会离开本机。
 - 不监听任何端口。
 
-## 使用
+## 安装
 
 ```sh
-go tool mygo dev      # 开发运行（自动重载）
-go tool mygo build    # 打包 .app / .dmg 到 build/
-go test ./...         # 测试
+go tool mygo build -skip-dmg -skip-notarize
+ditto "build/darwin-arm64/Clip Share.app" "/Applications/Clip Share.app"
+open "/Applications/Clip Share.app"
 ```
 
-需要 Go 1.27.3+（`go` 会按 `go.mod` 自动下载工具链）。
+需要 Go 1.27.3+（`go` 会按 `go.mod` 自动下载工具链）。签名身份在 `mygo.json` 的 `macos.signingIdentity`，当前用个人 Apple Development 证书，只供本机使用，没有公证。开发时用 `go tool mygo dev`，测试用 `go test ./...`。
 
-1. 点菜单栏的剪贴板图标打开面板，右上角选择远端主机（列表来自 `~/.ssh/config`，会记住上次选择）。
-2. 截图或复制图片，它会自动出现在列表顶部。
-3. 点「发送」，状态栏显示 `已复制远端路径：…` 后，到远端 CLI 粘贴即可。
+## 使用
+
+1. 按 **⌃⌥V**（或点菜单栏图标、或从 Spotlight 再次打开 Clip Share）唤出面板。菜单栏图标太多时系统可能把图标挤到看不见的地方，快捷键和再次打开始终可用。
+2. 右上角选择远端主机（列表来自 `~/.ssh/config`，会记住上次选择）。
+3. 截图或复制图片，它会自动出现在列表顶部。
+4. 点「发送」，状态栏显示 `已复制远端路径：…` 后，到远端 CLI 粘贴即可。
+5. 需要的话勾选左下角「开机启动」。
+
+面板是浮动 panel：弹出时不抢走当前应用（终端）的前台位置，失焦或按 Esc 即隐藏。
 
 远端主机需要能免交互登录（密钥或 agent），因为应用以 `BatchMode=yes` 调用 `/usr/bin/ssh`。
 
