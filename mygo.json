@@ -9,5 +9,9 @@
       "LSUIElement": true,
       "LSApplicationCategoryType": "public.app-category.developer-tools"
     }
+  },
+  "i18n": {
+    "dir": "locales",
+    "source": "en"
   }
 }

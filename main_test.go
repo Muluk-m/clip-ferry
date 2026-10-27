@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
+
+	"clip-share/locales"
 )
 
 func pngData(t *testing.T, w, h int, c color.Color) []byte {
@@ -157,8 +160,8 @@ func TestHelperProcess(t *testing.T) {
 	}
 	data, _ := io.ReadAll(os.Stdin)
 	cmd := args[len(args)-1]
-	name := cmd[strings.Index(cmd, "clip-share/")+len("clip-share/"):]
-	name = name[:strings.Index(name, ".png")+4]
+	name := cmd[strings.Index(cmd, "cat > ")+len("cat > "):]
+	name = name[:strings.Index(name, ";")]
 	fmt.Printf("Welcome to the box\n/home/me/.cache/clip-share/%s\n", name)
 	fmt.Fprintf(os.Stderr, "%s %d", strings.Join(args[:len(args)-1], " "), len(data))
 	os.Exit(0)
@@ -177,25 +180,121 @@ func TestSend(t *testing.T) {
 	h := &history{dir: t.TempDir(), max: 10}
 	s, _, _ := h.add(pngData(t, 8, 8, color.White), time.Now())
 	var calls []string
-	path, err := fakeSSH("ok", &calls).send(context.Background(), "gpu", s)
+	opts := defaultSettings().sendOptions()
+	var progress []int64
+	path, err := fakeSSH("ok", &calls).send(context.Background(), "gpu", s, opts, func(done, total int64) { progress = append(progress, done) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "/home/me/.cache/clip-share/" + s.ID + ".png"; path != want {
+	if want := "/home/me/.cache/clip-share/" + s.ID + "-1568.png"; path != want {
 		t.Errorf("path %q, want %q", path, want)
 	}
+	if len(progress) == 0 || progress[len(progress)-1] == 0 {
+		t.Errorf("progress %v", progress)
+	}
 	call := calls[0]
-	for _, part := range []string{"/usr/bin/ssh ", "BatchMode=yes", "ControlMaster=auto", " gpu ", "-mtime +7 -delete"} {
+	for _, part := range []string{"/usr/bin/ssh ", "BatchMode=yes", "ControlMaster=auto", " gpu ", "sh -c ", "-mtime +7"} {
 		if !strings.Contains(call, part) {
 			t.Errorf("ssh call %q lacks %q", call, part)
 		}
 	}
-	_, err = fakeSSH("fail", &calls).send(context.Background(), "gpu", s)
+	_, err = fakeSSH("fail", &calls).send(context.Background(), "gpu", s, opts, nil)
 	if err == nil || !strings.Contains(err.Error(), "Connection refused") {
 		t.Errorf("error %v", err)
 	}
-	if _, err := fakeSSH("ok", &calls).send(context.Background(), "", s); err == nil {
+	if _, err := fakeSSH("ok", &calls).send(context.Background(), "", s, opts, nil); err == nil {
 		t.Error("sent without a host")
+	}
+}
+
+// The remote script, run by a real sh in a home of its own.
+func TestRemoteCommand(t *testing.T) {
+	home := t.TempDir()
+	old := filepath.Join(home, "it's here", "old.png")
+	os.MkdirAll(filepath.Dir(old), 0o700)
+	os.WriteFile(old, nil, 0o600)
+	stale := time.Now().Add(-10 * 24 * time.Hour)
+	os.Chtimes(old, stale, stale)
+	for _, dir := range []string{"~/it's here", filepath.Join(home, "it's here")} {
+		cmd := exec.Command("/bin/sh", "-c", remoteCommand(sendOptions{dir: dir, keepDays: 7}, "abc-1568.jpg"))
+		cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+		cmd.Stdin = strings.NewReader("data")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v %s", dir, err, out)
+		}
+		want := filepath.Join(home, "it's here", "abc-1568.jpg")
+		if got := strings.TrimSpace(string(out)); got != want {
+			t.Errorf("%s: printed %q, want %q", dir, got, want)
+		}
+		if data, _ := os.ReadFile(want); string(data) != "data" {
+			t.Errorf("%s: wrote %q", dir, data)
+		}
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Error("an image past keepDays stayed")
+	}
+}
+
+func noisyPNG(t *testing.T, w, h int) string {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	rng := rand.New(rand.NewPCG(1, 2))
+	for i := range img.Pix {
+		img.Pix[i] = byte(rng.IntN(256))
+		if i%4 == 3 {
+			img.Pix[i] = 255
+		}
+	}
+	var b bytes.Buffer
+	png.Encode(&b, img)
+	path := filepath.Join(t.TempDir(), "noisy.png")
+	os.WriteFile(path, b.Bytes(), 0o600)
+	return path
+}
+
+func TestPrepareUpload(t *testing.T) {
+	path := noisyPNG(t, 3000, 2000)
+	orig, _ := os.ReadFile(path)
+	up, err := prepareUpload(path, claudeMaxEdge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(up.data))
+	if err != nil || cfg.Width != 1568 || cfg.Height != 1045 {
+		t.Fatalf("scaled to %dx%d (%v)", cfg.Width, cfg.Height, err)
+	}
+	if up.ext != ".jpg" || len(up.data) >= len(orig)/4 {
+		t.Errorf("photo-like image sent as %s, %d of %d bytes", up.ext, len(up.data), len(orig))
+	}
+	if up, _ := prepareUpload(path, 0); up.ext != ".png" || !bytes.Equal(up.data, orig) {
+		t.Error("the original was not sent as it is")
+	}
+	// Transparency stays PNG.
+	img := image.NewNRGBA(image.Rect(0, 0, 2000, 100))
+	var b bytes.Buffer
+	png.Encode(&b, img)
+	clear := filepath.Join(t.TempDir(), "clear.png")
+	os.WriteFile(clear, b.Bytes(), 0o600)
+	if up, _ := prepareUpload(clear, claudeMaxEdge); up.ext != ".png" {
+		t.Errorf("transparent image sent as %s", up.ext)
+	}
+}
+
+func TestChinese(t *testing.T) {
+	zh := locales.In("zh-Hans")
+	if got := zh.ImageCount(3); got != "3 张图片，仅保存在本机" {
+		t.Errorf("zh %q", got)
+	}
+	if got := locales.In("en").ImageCount(1); got != "1 image, kept on this Mac only" {
+		t.Errorf("en %q", got)
+	}
+}
+
+// run applies updates from workers until done says the work has finished.
+func run(updates chan func(), done func() bool) {
+	for !done() {
+		(<-updates)()
 	}
 }
 
@@ -211,7 +310,7 @@ func TestView(t *testing.T) {
 	a.sender = fakeSSH("ok", &calls)
 	tt := ui.NewTester(a.view, 380, 520)
 	a.now = tt.Now
-	if !tt.HasText("还没有图片") || a.host != "mini" {
+	if !tt.HasText("No images yet") || a.host != "mini" {
 		t.Fatalf("empty view: host %q, texts %q", a.host, tt.Texts())
 	}
 
@@ -219,22 +318,23 @@ func TestView(t *testing.T) {
 	(<-updates)()
 	tt.Frame()
 	id := a.items[0].ID
-	if !tt.HasText("1920 × 1080") || !tt.HasText("刚刚") {
+	if !tt.HasText("1920 × 1080") || !tt.HasText("Just now") {
 		t.Fatalf("texts %q after an image", tt.Texts())
 	}
-	if err := tt.Click("发送 " + id); err != nil {
+	if err := tt.Click("Send image " + id); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.HasText("发送中…") {
+	if !tt.HasText("0%") {
 		t.Errorf("texts %q while sending", tt.Texts())
 	}
-	(<-updates)()
+	run(updates, func() bool { _, busy := a.sending[id]; return !busy })
 	tt.Frame()
-	want := "/home/me/.cache/clip-share/" + id + ".png"
+	up, _ := prepareUpload(a.items[0].Path, claudeMaxEdge)
+	want := "/home/me/.cache/clip-share/" + id + "-1568" + up.ext
 	if !slices.Equal(copied, []string{want}) {
 		t.Errorf("copied %q, want %q", copied, want)
 	}
-	if !tt.HasText("已复制远端路径："+want) || !tt.HasText("1920 × 1080 · 已发送") {
+	if !tt.HasText("Remote path copied: "+want) || !tt.HasText("1920 × 1080 · Sent") {
 		t.Errorf("texts %q after sending", tt.Texts())
 	}
 	if !strings.Contains(calls[0], " mini ") {
@@ -243,7 +343,7 @@ func TestView(t *testing.T) {
 
 	var login []bool
 	a.login = func(on bool) error { login = append(login, on); return nil }
-	if err := tt.Click("开机启动"); err != nil {
+	if err := tt.Click("Open at login"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -252,13 +352,13 @@ func TestView(t *testing.T) {
 	}
 
 	tt.Advance(5 * time.Minute)
-	if !tt.HasText("5 分钟前") {
+	if !tt.HasText("5 min ago") {
 		t.Errorf("texts %q five minutes on", tt.Texts())
 	}
-	if err := tt.Click("清空"); err != nil {
+	if err := tt.Click("Clear"); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.HasText("还没有图片") || !tt.HasText("历史已清空") {
+	if !tt.HasText("No images yet") || !tt.HasText("History cleared") {
 		t.Errorf("texts %q after clearing", tt.Texts())
 	}
 }
@@ -281,10 +381,10 @@ func TestAgo(t *testing.T) {
 		d    time.Duration
 		want string
 	}{
-		{10 * time.Second, "刚刚"},
-		{12 * time.Minute, "12 分钟前"},
-		{3 * time.Hour, "今天 12:00"},
-		{30 * time.Hour, "10-26 09:00"},
+		{10 * time.Second, "Just now"},
+		{12 * time.Minute, "12 min ago"},
+		{3 * time.Hour, "Today 12:00 PM"},
+		{30 * time.Hour, "Oct 26 9:00 AM"},
 	} {
 		if got := ago(now.Add(-c.d), now); got != c.want {
 			t.Errorf("ago(%v) = %q, want %q", c.d, got, c.want)

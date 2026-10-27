@@ -21,6 +21,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"clip-share/locales"
 )
 
 const maxShots = 100
@@ -55,11 +57,12 @@ type app struct {
 	list    ui.ListState
 	hosts   []string
 	host    string
-	sending map[string]bool   // shot IDs being sent
-	sent    map[string]string // host+"\x00"+ID → remote path
+	sending map[string]float64 // shot IDs being sent → share uploaded
+	sent    map[string]string  // host+"\x00"+ID → remote path
 	status  string
 	failed  bool
 	atLogin bool
+	opts    settings
 }
 
 func newApp(dir string, hosts []string) *app {
@@ -74,10 +77,11 @@ func newApp(dir string, hosts []string) *app {
 		login:   func(bool) error { return nil },
 		now:     time.Now,
 		hosts:   hosts,
-		host:    loadSettings(dir).Host,
-		sending: map[string]bool{},
+		opts:    loadSettings(dir),
+		sending: map[string]float64{},
 		sent:    map[string]string{},
 	}
+	a.host = a.opts.Host
 	if !slices.Contains(hosts, a.host) {
 		a.host = ""
 		if len(hosts) > 0 {
@@ -106,7 +110,7 @@ func (a *app) load() {
 	a.update(func() {
 		a.items = items
 		if err != nil {
-			a.setStatus("读取历史失败："+err.Error(), true)
+			a.setStatus(locales.StatusLoadFailed(err.Error()), true)
 		}
 	})
 }
@@ -116,7 +120,7 @@ func (a *app) load() {
 func (a *app) addImage(data []byte) {
 	s, _, err := a.history.add(data, a.now())
 	if err != nil {
-		a.update(func() { a.setStatus("保存图片失败："+err.Error(), true) })
+		a.update(func() { a.setStatus(locales.StatusSaveFailed(err.Error()), true) })
 		return
 	}
 	it := loadItem(s)
@@ -137,51 +141,67 @@ func sentKey(host, id string) string { return host + "\x00" + id }
 func (a *app) send(it item) {
 	host := a.host
 	if host == "" {
-		a.setStatus("先在右上角选择远端主机（来自 ~/.ssh/config）", true)
+		a.setStatus(locales.StatusPickHost(), true)
 		return
 	}
-	if a.sending[it.ID] {
+	if _, busy := a.sending[it.ID]; busy {
 		return
 	}
-	a.sending[it.ID] = true
-	a.setStatus("正在发送到 "+host+"…", false)
+	a.sending[it.ID] = 0
+	a.setStatus(locales.StatusSendingTo(host), false)
+	opts := a.opts.sendOptions()
 	go func() {
-		path, err := a.sender.send(context.Background(), host, it.shot)
+		path, err := a.sender.send(context.Background(), host, it.shot, opts, func(done, total int64) {
+			a.update(func() {
+				if _, busy := a.sending[it.ID]; busy {
+					a.sending[it.ID] = float64(done) / float64(max(total, 1))
+				}
+			})
+		})
 		if err == nil {
 			a.copy(path)
 		}
 		a.update(func() {
 			delete(a.sending, it.ID)
 			if err != nil {
-				a.setStatus("发送失败："+err.Error(), true)
+				a.setStatus(locales.StatusSendFailed(err.Error()), true)
 				return
 			}
 			a.sent[sentKey(host, it.ID)] = path
-			a.setStatus("已复制远端路径："+path, false)
+			a.setStatus(locales.StatusCopied(path), false)
 		})
 	}()
 }
 
+// warm connects to the chosen host while the user picks an image.
+func (a *app) warm() {
+	if host := a.host; host != "" {
+		go a.sender.warm(context.Background(), host)
+	}
+}
+
 func (a *app) clearHistory() {
 	if err := a.history.clear(); err != nil {
-		a.setStatus("清空失败："+err.Error(), true)
+		a.setStatus(locales.StatusClearFailed(err.Error()), true)
 		return
 	}
 	a.items = nil
-	a.setStatus("历史已清空", false)
+	a.setStatus(locales.StatusCleared(), false)
 }
 
 func (a *app) toggleLogin() {
 	if err := a.login(a.atLogin); err != nil {
 		a.atLogin = !a.atLogin
-		a.setStatus("设置开机启动失败："+err.Error(), true)
+		a.setStatus(locales.StatusLoginFailed(err.Error()), true)
 	}
 }
 
 func (a *app) chooseHost() {
-	if err := saveSettings(a.dir, settings{Host: a.host}); err != nil {
-		a.setStatus("保存设置失败："+err.Error(), true)
+	a.opts.Host = a.host
+	if err := saveSettings(a.dir, a.opts); err != nil {
+		a.setStatus(locales.StatusSettingsFailed(err.Error()), true)
 	}
+	a.warm()
 }
 
 func (a *app) view(c *ui.Context) {
@@ -189,7 +209,7 @@ func (a *app) view(c *ui.Context) {
 		a.hide()
 	}
 	c.OnShortcut(ui.Cmd, ui.KeyQ, a.quit)
-	// Times such as "3 分钟前" go stale while the panel stays open.
+	// Times such as "3 min ago" go stale while the panel stays open.
 	c.After(time.Minute)
 	t := c.Theme()
 	now := a.now()
@@ -197,41 +217,41 @@ func (a *app) view(c *ui.Context) {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Gap(2).Children(func() {
 				ui.Text(c, "Clip Share").FontSize(17).Bold()
-				ui.Text(c, summonLabel+" 打开 · 发送后远端路径写入剪贴板").FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, locales.AppSubtitle(summonLabel)).FontSize(11).TextColor(t.TextMuted)
 			})
 			if len(a.hosts) == 0 {
-				ui.Text(c, "~/.ssh/config 里没有主机").FontSize(11).TextColor(t.Danger)
+				ui.Text(c, locales.NoHosts()).FontSize(11).TextColor(t.Danger)
 			} else {
-				ui.Select(c.Key("host"), &a.host, a.hosts).Label("远端主机").Width(150).OnChange(a.chooseHost)
+				ui.Select(c.Key("host"), &a.host, a.hosts).Label(locales.HostLabel()).Width(150).OnChange(a.chooseHost)
 			}
 		})
 		ui.Divider(c)
-		a.list.Label = func(i int) string { return "图片 " + a.items[i].ID }
+		a.list.Label = func(i int) string { return a.items[i].ID }
 		ui.List(c.Key("shots"), &a.list, len(a.items)).Grow(1).Gap(4).
 			ItemKey(func(i int) any { return a.items[i].ID }).
 			Rows(func(row ui.ListRow) { a.row(row.Context, a.items[row.Index], now) }).
 			Children(func() {
 				if len(a.items) == 0 {
 					ui.Column(c).Grow(1).Center().Gap(6).Padding(24).Children(func() {
-						ui.Text(c, "还没有图片").FontSize(14).Bold()
-						ui.Text(c, "截图或复制图片后，会自动出现在这里").FontSize(12).TextColor(t.TextMuted)
+						ui.Text(c, locales.EmptyTitle()).FontSize(14).Bold()
+						ui.Text(c, locales.EmptyHint()).FontSize(12).TextColor(t.TextMuted)
 					})
 				}
 			})
 		ui.Divider(c)
 		status, color := a.status, t.TextMuted
 		if status == "" {
-			status = fmt.Sprintf("%d 张图片，仅保存在本机", len(a.items))
+			status = locales.ImageCount(len(a.items))
 		}
 		if a.failed {
 			color = t.Danger
 		}
 		ui.Text(c, status).FontSize(11).TextColor(color).MaxLines(2).Ellipsis("…")
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Checkbox(c.Key("login"), &a.atLogin, "开机启动").OnChange(a.toggleLogin)
+			ui.Checkbox(c.Key("login"), &a.atLogin, locales.OpenAtLogin()).OnChange(a.toggleLogin)
 			ui.Spacer(c)
-			ui.Button(c, "清空").Disabled(len(a.items) == 0).OnClick(a.clearHistory)
-			ui.Button(c, "退出").OnClick(a.quit)
+			ui.Button(c, locales.Clear()).Disabled(len(a.items) == 0).OnClick(a.clearHistory)
+			ui.Button(c, locales.Quit()).OnClick(a.quit)
 		})
 	})
 }
@@ -248,16 +268,17 @@ func (a *app) row(c *ui.Context, it item, now time.Time) {
 			ui.Text(c, ago(it.Taken, now)).FontSize(13)
 			detail := fmt.Sprintf("%d × %d", it.W, it.H)
 			if a.sent[sentKey(a.host, it.ID)] != "" {
-				detail += " · 已发送"
+				detail += " · " + locales.SentTag()
 			}
 			ui.Text(c, detail).FontSize(11).TextColor(t.TextMuted)
 		})
-		label := "发送"
-		if a.sending[it.ID] {
-			label = "发送中…"
+		label := locales.Send()
+		progress, busy := a.sending[it.ID]
+		if busy {
+			label = locales.SendingPercent(int(progress * 100))
 		}
-		ui.PrimaryButton(c, label).Label("发送 " + it.ID).
-			Disabled(a.sending[it.ID] || a.host == "").
+		ui.PrimaryButton(c, label).Label(locales.SendImage(it.ID)).
+			Disabled(busy || a.host == "").
 			OnClick(func() { a.send(it) })
 	})
 }
@@ -267,13 +288,13 @@ func ago(t, now time.Time) string {
 	d := now.Sub(t)
 	switch {
 	case d < time.Minute:
-		return "刚刚"
+		return locales.JustNow()
 	case d < time.Hour:
-		return fmt.Sprintf("%d 分钟前", int(d.Minutes()))
+		return locales.MinutesAgo(int(d.Minutes()))
 	case t.YearDay() == now.YearDay() && t.Year() == now.Year():
-		return t.Format("今天 15:04")
+		return locales.TodayAt(t)
 	default:
-		return t.Format("01-02 15:04")
+		return locales.DateAt(t)
 	}
 }
 
@@ -281,7 +302,7 @@ func ago(t, now time.Time) string {
 // push the icon off the screen, behind the notch or past the edge: the
 // panel then shows on the display of the pointer, a third of the way down,
 // as launchers do.
-func showPanel(win *mygo.Window, tray *mygo.Tray) {
+func showPanel(win *mygo.Window, tray *mygo.Tray, onShow func()) {
 	anchor := tray.Bounds()
 	center := mygo.Point{X: anchor.X + anchor.Width/2, Y: anchor.Y + anchor.Height/2}
 	d := mygo.Screen.DisplayNearestPoint(center)
@@ -303,6 +324,7 @@ func showPanel(win *mygo.Window, tray *mygo.Tray) {
 	y = max(area.Y, min(y, area.Y+max(0, area.Height-b.Height)))
 	win.SetPosition(x, y)
 	win.Show()
+	onShow()
 }
 
 func contains(r mygo.Rectangle, p mygo.Point) bool {
@@ -345,11 +367,12 @@ func main() {
 		}
 		home, _ := os.UserHomeDir()
 		a := newApp(dir, sshHosts(filepath.Join(home, ".ssh", "config")))
+		placeTrayRight("clip-share", 420)
 		tray, err := mygo.NewTray(mygo.TrayOptions{
 			ID:             "clip-share",
 			Icon:           trayIcon(),
 			IconIsTemplate: true,
-			ToolTip:        "Clip Share — " + summonLabel + " 打开",
+			ToolTip:        locales.TrayTooltip(summonLabel),
 		})
 		if err != nil {
 			log.Fatal("tray: ", err)
@@ -381,7 +404,7 @@ func main() {
 				win.Hide()
 			}
 		})
-		show := func() { showPanel(win, tray) }
+		show := func() { showPanel(win, tray, a.warm) }
 		toggle := func() {
 			if win.IsVisible() {
 				win.Hide()
@@ -390,14 +413,14 @@ func main() {
 			}
 		}
 		if err := mygo.GlobalShortcut.Register(summonKey, toggle); err != nil {
-			a.setStatus("快捷键 "+summonLabel+" 已被占用："+err.Error(), true)
+			a.setStatus(locales.StatusShortcutTaken(summonLabel, err.Error()), true)
 		}
 		// Opening the app again, from Spotlight or Launchpad, shows the
 		// panel: the way in when the menu bar has no room for the icon.
 		mygo.App.OnSecondInstance(func([]string, string) { show() })
 		mygo.App.OnActivate(func(bool) { show() })
 		menu := mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "打开 Clip Share", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
+			{Label: locales.MenuOpen(), Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		})
