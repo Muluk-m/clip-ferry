@@ -654,3 +654,23 @@ func ClosePanel() string { return In(i18n.Locale()).ClosePanel() }
 func (msgs Messages) ClosePanel() string {
 	return Catalog.Format(msgs.locale, "closePanel", nil)
 }
+
+// AutoSync says "Auto-sync images"
+// in the language the app shows.
+func AutoSync() string { return In(i18n.Locale()).AutoSync() }
+
+// AutoSync says "Auto-sync images"
+// in the language of msgs.
+func (msgs Messages) AutoSync() string {
+	return Catalog.Format(msgs.locale, "autoSync", nil)
+}
+
+// AutoSyncHint says "Send new clipboard images to the selected host."
+// in the language the app shows.
+func AutoSyncHint() string { return In(i18n.Locale()).AutoSyncHint() }
+
+// AutoSyncHint says "Send new clipboard images to the selected host."
+// in the language of msgs.
+func (msgs Messages) AutoSyncHint() string {
+	return Catalog.Format(msgs.locale, "autoSyncHint", nil)
+}

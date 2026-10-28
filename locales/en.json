@@ -194,5 +194,7 @@
   "sizeHint": "Claude scales larger images down to 1568 px.",
   "shortcut": "Shortcut",
   "afterSend": "After sending",
-  "closePanel": "Close the panel"
+  "closePanel": "Close the panel",
+  "autoSync": "Auto-sync images",
+  "autoSyncHint": "Send new clipboard images to the selected host."
 }

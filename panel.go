@@ -78,6 +78,7 @@ func (a *app) view(c *ui.Context) {
 	}
 	box.Children(func() {
 		a.header(c)
+		a.autoSyncControl(c)
 		a.shots(c)
 		a.footer(c)
 	})
@@ -105,6 +106,19 @@ func (a *app) header(c *ui.Context) {
 				ui.Icon(c, iconMore).FontSize(15)
 			}).Menu(a.moreMenu)
 		})
+	})
+}
+
+func (a *app) autoSyncControl(c *ui.Context) {
+	ui.Row(c).Padding(4, 14, 10).Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Gap(3).OnClick(func() {
+			a.opts.AutoSync = !a.opts.AutoSync
+			a.save()
+		}).Children(func() {
+			ui.Text(c, locales.AutoSync()).FontSize(12)
+			ui.Text(c, locales.AutoSyncHint()).FontSize(10).TextColor(c.Theme().TextMuted)
+		})
+		ui.Switch(c.Key("auto-sync"), &a.opts.AutoSync).Label(locales.AutoSync()).OnChange(a.save)
 	})
 }
 

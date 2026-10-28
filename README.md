@@ -16,7 +16,7 @@
 
 When Claude Code runs on a remote machine over SSH, it can't read the screenshot on your Mac. Ferry lives in the menu bar and keeps a history of the images you copy or capture. Press ↵ and it sends that one image to the remote machine over SSH, then copies the image's absolute path on the remote machine. Paste the path into Claude Code and it reads the image.
 
-- **One image per send.** Only the image you pick goes over the network. There's no folder sync and no LAN share.
+- **Manual or automatic.** Pick an image to send, or turn on **Auto-sync images** to send new clipboard images to the selected host.
 - **Plain SSH.** It uses `/usr/bin/ssh` with your keys, your agent and your `~/.ssh/config`. Nothing needs installing on the remote machine.
 - **Fast.** It keeps the connection open after the first send, so later sends skip the handshake. Images are shrunk to 1568 px on the long edge, the largest size Claude reads, and sent as whichever of PNG and JPEG is smaller.
 - **Driven from the keyboard.** ⌃⌥V opens the panel. ↑↓ choose an image, ↵ sends it, 1–9 send by position, ⌫ deletes.
@@ -45,6 +45,8 @@ The app is signed but not notarized, so macOS blocks it the first time you open 
    ```
    > why does this error happen? /home/me/.cache/ferry/5f91392be1766983-1568.png
    ```
+
+Turn on **Auto-sync images** below the host selector to send new copied images and screenshots without opening the panel. It defaults to off and remembers your choice across restarts. Turning it off stops new automatic sends; uploads already in progress finish normally. Successful uploads copy their remote path unless you copied something else in the meantime. Automatic sends leave the panel open.
 
 To send an image again, select it and press ↵, or right-click it to send or delete it. **Settings** and **Clear History** are in the ⋯ menu.
 

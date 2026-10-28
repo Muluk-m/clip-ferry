@@ -3,9 +3,10 @@ package main
 import (
 	"image/color"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/transfer"
-	"time"
+	"github.com/egoist/mygo/ui"
 )
 
 func drainSends(t *testing.T, a *app, updates chan func()) {
@@ -145,5 +146,42 @@ func TestAutoSyncRepeatedClipboardImage(t *testing.T) {
 				t.Fatal("duplicate image added to history")
 			}
 		})
+	}
+}
+
+func TestAutoSyncControl(t *testing.T) {
+	a := newApp(t.TempDir(), []string{"mini"})
+	updates := make(chan func(), 32)
+	a.update = func(fn func()) { updates <- fn }
+	var calls []string
+	a.sender = fakeSSH("ok", &calls)
+	tt := ui.NewTester(a.view, panelWidth, panelHeight)
+	if err := tt.Click("Auto-sync images"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Frame()
+	if !a.opts.AutoSync || !newApp(a.dir, a.hosts).opts.AutoSync {
+		t.Fatal("switch did not enable and persist auto sync")
+	}
+	a.addImage(pngData(t, 8, 8, color.White))
+	(<-updates)()
+	drainSends(t, a, updates)
+	tt.Frame()
+	if len(calls) != 1 || !tt.HasText("Sent") {
+		t.Fatal("enabled switch did not send the new image")
+	}
+	if err := tt.Click("Auto-sync images"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a.opts.AutoSync || loadSettings(a.dir).AutoSync {
+		t.Fatal("switch did not disable and persist auto sync")
+	}
+	a.addImage(pngData(t, 8, 8, color.Black))
+	(<-updates)()
+	tt.Frame()
+	if len(calls) != 1 || len(a.sending) != 0 {
+		t.Fatal("disabled switch still sent a new image")
 	}
 }
