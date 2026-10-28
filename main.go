@@ -36,18 +36,19 @@ type item struct {
 // app is the state the panel and the settings show. All of it is read and
 // changed on the main thread: workers publish through update.
 type app struct {
-	dir     string
-	history *history
-	sender  sender
-	update  func(func())     // Window.Update
-	copy    func(string)     // mygo.Clipboard.WriteText
-	close   func()           // closes the panel and gives the keyboard back
-	quit    func()           // mygo.App.Quit
-	login   func(bool) error // mygo.App.SetOpenAtLogin
-	rebind  func(old, new shortcut) error
-	locale  func(string) // mygo.App.SetLocale
-	prefs   func()       // opens the settings
-	now     func() time.Time
+	dir              string
+	history          *history
+	sender           sender
+	update           func(func())     // Window.Update
+	copy             func(string)     // mygo.Clipboard.WriteText
+	close            func()           // closes the panel and gives the keyboard back
+	quit             func()           // mygo.App.Quit
+	login            func(bool) error // mygo.App.SetOpenAtLogin
+	rebind           func(old, new shortcut) error
+	locale           func(string) // mygo.App.SetLocale
+	prefs            func()       // opens the settings
+	now              func() time.Time
+	clipboardChanges func() int64 // nil where change counts are unavailable
 
 	items   []item
 	sel     int // the row Enter sends
@@ -158,6 +159,10 @@ func (a *app) load() {
 // addImage stores an image the watcher found and selects it. It runs on
 // the watcher's goroutine.
 func (a *app) addImage(data []byte) {
+	var clipboardVersion int64
+	if a.clipboardChanges != nil {
+		clipboardVersion = a.clipboardChanges()
+	}
 	s, _, err := a.history.add(data, a.now())
 	if err != nil {
 		a.update(func() { a.setStatus(locales.StatusSaveFailed(err.Error()), true) })
@@ -171,6 +176,9 @@ func (a *app) addImage(data []byte) {
 			a.items = a.items[:maxShots]
 		}
 		a.sel = 0
+		if a.opts.AutoSync {
+			a.sendImage(it, true, clipboardVersion)
+		}
 	})
 }
 
@@ -190,7 +198,9 @@ func (a *app) opened() {
 }
 
 // send copies an image to the chosen host. It runs on the main thread.
-func (a *app) send(it item) {
+func (a *app) send(it item) { a.sendImage(it, false, 0) }
+
+func (a *app) sendImage(it item, automatic bool, clipboardVersion int64) {
 	host := a.host
 	if host == "" {
 		a.setStatus(locales.ChooseHost(), true)
@@ -212,9 +222,6 @@ func (a *app) send(it item) {
 				}
 			})
 		})
-		if err == nil {
-			a.copy(path)
-		}
 		a.update(func() {
 			delete(a.sending, it.ID)
 			if err != nil {
@@ -222,8 +229,17 @@ func (a *app) send(it item) {
 				return
 			}
 			a.sent[sentKey(host, it.ID)] = path
-			a.setStatus(locales.StatusCopied(), false)
-			if a.opts.AutoHide {
+			// A background upload must not replace a newer clipboard or a different host
+			// selection with its old path.
+			copyPath := !automatic || (a.opts.AutoSync && a.host == host && len(a.items) > 0 && a.items[0].ID == it.ID &&
+				(a.clipboardChanges == nil || a.clipboardChanges() == clipboardVersion))
+			if copyPath {
+				a.copy(path)
+				a.setStatus(locales.StatusCopied(), false)
+			} else {
+				a.setStatus(locales.SentTag(), false)
+			}
+			if !automatic && a.opts.AutoHide {
 				a.close()
 			}
 		})
@@ -492,6 +508,7 @@ func main() {
 				show()
 			}
 		}
+		a.clipboardChanges = clipboardChangeCount()
 		a.copy = mygo.Clipboard.WriteText
 		a.quit = mygo.App.Quit
 		a.login = mygo.App.SetOpenAtLogin
@@ -562,7 +579,7 @@ func main() {
 			a.load()
 			w := &watcher{
 				clip:     mygo.Clipboard,
-				changes:  clipboardChangeCount(),
+				changes:  a.clipboardChanges,
 				interval: 700 * time.Millisecond,
 				onImage:  a.addImage,
 			}

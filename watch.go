@@ -56,13 +56,14 @@ func (w *watcher) poll() {
 	// Files copied in Finder come with their icons as an image: those are
 	// not what the user copied.
 	if !slices.Contains(formats, transfer.PNG) || slices.Contains(formats, transfer.FileList) {
+		w.lastID = ""
 		return
 	}
 	data := w.clip.ReadImage()
 	if len(data) == 0 {
 		return
 	}
-	if id := imageID(data); id != w.lastID {
+	if id := imageID(data); w.changes != nil || id != w.lastID {
 		w.lastID = id
 		w.onImage(data)
 	}
