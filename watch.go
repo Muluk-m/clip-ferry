@@ -21,7 +21,7 @@ type watcher struct {
 	clip     clipboardSource
 	changes  func() int64 // nil where the platform has no change count
 	interval time.Duration
-	onImage  func([]byte)
+	onImage  func([]byte, int64)
 
 	lastChange int64
 	lastID     string
@@ -56,14 +56,20 @@ func (w *watcher) poll() {
 	// Files copied in Finder come with their icons as an image: those are
 	// not what the user copied.
 	if !slices.Contains(formats, transfer.PNG) || slices.Contains(formats, transfer.FileList) {
+		w.lastID = ""
 		return
 	}
 	data := w.clip.ReadImage()
 	if len(data) == 0 {
 		return
 	}
-	if id := imageID(data); id != w.lastID {
+	id := imageID(data)
+	// Do not pair bytes from an old clipboard with a newer change count.
+	if w.changes != nil && w.changes() != w.lastChange {
+		return
+	}
+	if w.changes != nil || id != w.lastID {
 		w.lastID = id
-		w.onImage(data)
+		w.onImage(data, w.lastChange)
 	}
 }

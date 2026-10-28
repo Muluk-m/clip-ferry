@@ -123,7 +123,7 @@ func TestWatcher(t *testing.T) {
 	change := int64(1)
 	var got [][]byte
 	w := &watcher{clip: clip, changes: func() int64 { return change }, lastChange: -1,
-		onImage: func(b []byte) { got = append(got, b) }}
+		onImage: func(b []byte, _ int64) { got = append(got, b) }}
 
 	w.poll()
 	w.poll() // unchanged: the image is not read again
@@ -141,7 +141,7 @@ func TestWatcher(t *testing.T) {
 	}
 	// Without a change count, the image's ID tells a new one apart.
 	clip.formats = []transfer.Format{transfer.PNG}
-	w2 := &watcher{clip: clip, onImage: func(b []byte) { got = append(got, b) }}
+	w2 := &watcher{clip: clip, onImage: func(b []byte, _ int64) { got = append(got, b) }}
 	w2.poll()
 	w2.poll()
 	if len(got) != 2 {
@@ -331,7 +331,7 @@ func TestView(t *testing.T) {
 		t.Fatalf("empty view: texts %q", tt.Texts())
 	}
 
-	a.addImage(pngData(t, 1920, 1080, color.White))
+	a.addImage(pngData(t, 1920, 1080, color.White), 0)
 	(<-updates)()
 	tt.Frame()
 	id := a.items[0].ID
@@ -357,7 +357,7 @@ func TestView(t *testing.T) {
 	}
 
 	// A new image goes on top, selected; 2 sends the one below it.
-	a.addImage(pngData(t, 800, 600, color.Black))
+	a.addImage(pngData(t, 800, 600, color.Black), 0)
 	(<-updates)()
 	tt.Frame()
 	if a.sel != 0 || len(a.items) != 2 || a.items[1].ID != id {

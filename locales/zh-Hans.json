@@ -61,5 +61,7 @@
   "sizeHint": "Claude 会把更大的图缩到 1568 px。",
   "shortcut": "快捷键",
   "afterSend": "发送后",
-  "closePanel": "收起面板"
+  "closePanel": "收起面板",
+  "autoSync": "自动同步图片",
+  "autoSyncHint": "新复制的图片自动发送到当前主机"
 }

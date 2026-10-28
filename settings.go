@@ -14,6 +14,7 @@ type settings struct {
 	KeepDays  int      `json:"keepDays"`
 	// MaxEdge is the long edge images are sent at; -1 sends originals.
 	MaxEdge  int    `json:"maxEdge"`
+	AutoSync bool   `json:"autoSync"` // send new clipboard images to the selected host
 	AutoHide bool   `json:"autoHide"` // close the panel once the path is copied
 	Shortcut string `json:"shortcut"` // one of shortcuts
 	Language string `json:"language"` // "" follows the system

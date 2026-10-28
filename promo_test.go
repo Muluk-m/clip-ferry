@@ -118,7 +118,7 @@ func newDemo(t *testing.T) *demo {
 func (d *demo) add(view func(*ui.Context), w, h int, ago time.Duration) {
 	now := d.clock
 	d.clock = now.Add(-ago)
-	d.a.addImage(encode(render(view, w/2, h/2, false)))
+	d.a.addImage(encode(render(view, w/2, h/2, false)), 0)
 	d.clock = now
 }
 
@@ -200,7 +200,7 @@ func (s scene) view(c *ui.Context) {
 			const k = 0.74
 			ui.Column(c).Absolute().Top(40).Left(560).Width(480*k).Height(648*k).Radius(10).Clip().
 				Background(ui.Hex("#ffffff")).Shadow(0, 18, 48, 0, ui.RGBA(20, 30, 60, 0.28)).Children(func() {
-				ui.Row(c).Height(28 * k).Padding(0, 10).Gap(6).AlignItems(ui.Center).Background(ui.Hex("#ececee")).Children(func() {
+				ui.Row(c).Height(28*k).Padding(0, 10).Gap(6).AlignItems(ui.Center).Background(ui.Hex("#ececee")).Children(func() {
 					for _, col := range []string{"#ff5f57", "#febc2e", "#28c840"} {
 						ui.Box(c).Size(9, 9).Radius(4.5).Background(ui.Hex(col))
 					}
