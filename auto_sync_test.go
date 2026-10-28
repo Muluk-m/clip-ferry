@@ -44,7 +44,7 @@ func TestAutoSync(t *testing.T) {
 			if scenario == "no host" {
 				a.host = ""
 			}
-			a.addImage(pngData(t, 8, 8, color.White))
+			a.addImage(pngData(t, 8, 8, color.White), revision)
 			if scenario == "changed while saving" {
 				revision++
 			}
@@ -164,7 +164,7 @@ func TestAutoSyncControl(t *testing.T) {
 	if !a.opts.AutoSync || !newApp(a.dir, a.hosts).opts.AutoSync {
 		t.Fatal("switch did not enable and persist auto sync")
 	}
-	a.addImage(pngData(t, 8, 8, color.White))
+	a.addImage(pngData(t, 8, 8, color.White), 0)
 	(<-updates)()
 	drainSends(t, a, updates)
 	tt.Frame()
@@ -178,10 +178,42 @@ func TestAutoSyncControl(t *testing.T) {
 	if a.opts.AutoSync || loadSettings(a.dir).AutoSync {
 		t.Fatal("switch did not disable and persist auto sync")
 	}
-	a.addImage(pngData(t, 8, 8, color.Black))
+	a.addImage(pngData(t, 8, 8, color.Black), 0)
 	(<-updates)()
 	tt.Frame()
 	if len(calls) != 1 || len(a.sending) != 0 {
 		t.Fatal("disabled switch still sent a new image")
+	}
+}
+
+type changingClip struct {
+	*fakeClip
+	changed func()
+}
+
+func (c *changingClip) ReadImage() []byte {
+	data := c.fakeClip.ReadImage()
+	if c.changed != nil {
+		c.changed()
+	}
+	return data
+}
+
+func TestWatcherClipboardChangesDuringRead(t *testing.T) {
+	revision := int64(1)
+	clip := &changingClip{
+		fakeClip: &fakeClip{formats: []transfer.Format{transfer.PNG}, image: pngData(t, 8, 8, color.White)},
+		changed:  func() { revision++ },
+	}
+	var versions []int64
+	w := watcher{clip: clip, changes: func() int64 { return revision }, onImage: func(_ []byte, version int64) { versions = append(versions, version) }}
+	w.poll()
+	if len(versions) != 0 {
+		t.Fatal("emitted an image whose clipboard changed during reading")
+	}
+	clip.changed = nil
+	w.poll()
+	if len(versions) != 1 || versions[0] != revision {
+		t.Fatalf("did not retry with the current clipboard version: %v", versions)
 	}
 }

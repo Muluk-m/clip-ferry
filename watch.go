@@ -21,7 +21,7 @@ type watcher struct {
 	clip     clipboardSource
 	changes  func() int64 // nil where the platform has no change count
 	interval time.Duration
-	onImage  func([]byte)
+	onImage  func([]byte, int64)
 
 	lastChange int64
 	lastID     string
@@ -63,8 +63,13 @@ func (w *watcher) poll() {
 	if len(data) == 0 {
 		return
 	}
-	if id := imageID(data); w.changes != nil || id != w.lastID {
+	id := imageID(data)
+	// Do not pair bytes from an old clipboard with a newer change count.
+	if w.changes != nil && w.changes() != w.lastChange {
+		return
+	}
+	if w.changes != nil || id != w.lastID {
 		w.lastID = id
-		w.onImage(data)
+		w.onImage(data, w.lastChange)
 	}
 }

@@ -158,11 +158,7 @@ func (a *app) load() {
 
 // addImage stores an image the watcher found and selects it. It runs on
 // the watcher's goroutine.
-func (a *app) addImage(data []byte) {
-	var clipboardVersion int64
-	if a.clipboardChanges != nil {
-		clipboardVersion = a.clipboardChanges()
-	}
+func (a *app) addImage(data []byte, clipboardVersion int64) {
 	s, _, err := a.history.add(data, a.now())
 	if err != nil {
 		a.update(func() { a.setStatus(locales.StatusSaveFailed(err.Error()), true) })
