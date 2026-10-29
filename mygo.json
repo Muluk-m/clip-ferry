@@ -1,7 +1,7 @@
 {
   "name": "Ferry",
   "identifier": "com.muluk.ferry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "out": "build",
   "macos": {
     "signingIdentity": "Apple Development: maqiqian0316@gmail.com (2CN29TRWQC)",
